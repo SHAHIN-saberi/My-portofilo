@@ -15,7 +15,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: false  # Skip broken submodules
+          submodules: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,17 +29,20 @@ jobs:
           cd backend
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          echo "Installed packages:"
+          python -m pip list
 
-      - name: Verify installation
+      - name: Verify pytest
         run: |
           cd backend
-          python -m pip list
           python -m pytest --version
+          python -c "import sqlalchemy; print('SQLAlchemy:', sqlalchemy.__version__)"
+          python -c "import fastapi; print('FastAPI:', fastapi.__version__)"
 
       - name: Run tests
         run: |
           cd backend
-          python -m pytest -v
+          python -m pytest -v --tb=short
 
   frontend:
     name: Frontend Build
@@ -49,7 +52,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: false  # Skip broken submodules
+          submodules: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
