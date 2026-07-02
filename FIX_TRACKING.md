@@ -177,9 +177,17 @@
 - [ ] **P1-13**: Set up CI/CD (Phase 10)
   - **Status:** NOT FIXED
 
-- [ ] **P1-3**: Docker hardening (Phase 8)
-  - **Status:** NOT FIXED
-  - **Files:** `backend/Dockerfile`, `frontend/Dockerfile`, `docker-compose.yml`
+- [x] **P1-3**: Docker hardening (Phase 8)
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Added `.dockerignore` for backend (excludes .env, tests, .git, __pycache__, etc.)
+    - Added `.dockerignore` for frontend (excludes node_modules, .next, .env, etc.)
+    - Backend Dockerfile: multi-stage build, removed build-essential from final image, added non-root `appuser`, added HEALTHCHECK
+    - Frontend Dockerfile: added NEXT_PUBLIC_API_URL as build-arg, added non-root `appuser`, added HEALTHCHECK
+    - docker-compose.yml: removed unnecessary `ports:` from postgres/backend/frontend, added NEXT_PUBLIC_API_URL as build-arg, added healthchecks for backend/frontend, added `depends_on: condition: service_healthy`
+    - Removed `extra_hosts: host.docker.internal` (unused)
+  - **Files:** `backend/.dockerignore`, `frontend/.dockerignore`, `backend/Dockerfile`, `frontend/Dockerfile`, `docker-compose.yml`
+  - **Note:** ⚠️ NOT tested with actual Docker build (per Rule 8). Human should verify with `docker compose build && docker compose up -d`
 
 ---
 
