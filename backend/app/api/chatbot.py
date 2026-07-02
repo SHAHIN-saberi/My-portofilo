@@ -1,7 +1,8 @@
 """Chatbot API — wired to the RAG decision flow.
 
 Endpoint contract only; all decisioning (scope filter, relevance gate,
-retrieval, rerank, generation, fallbacks) lives in `app.services.rag`.
+retrieval, rerank, generation, fallbacks, stop conditions, clarification)
+lives in `app.services.rag`.
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession

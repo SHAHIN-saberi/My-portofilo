@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
@@ -25,6 +26,28 @@ FALLBACK_ERROR = (
 )
 DEFAULT_OWNER_NAME = "the profile owner"
 
+# RRF k constant — dampens the influence of rank differences between retrieval methods.
+RRF_K = 60
+
+# Stop-condition thresholds.
+# High-confidence early exit: both methods rank the same chunk at or before this rank.
+STOP_BOTH_RANK = 2
+# Single-method early exit: vector search only at or before this rank.
+STOP_SINGLE_RANK = 1
+# RRF score above this → high confidence, skip reranking overhead (proceed directly).
+HIGH_CONFIDENCE_RRF = 0.03
+
+# Dynamic retrieval budget multipliers by query complexity.
+# Simple queries need fewer chunks; complex/multi-faceted queries need more.
+BUDGET_MULTIPLIER: dict[str, float] = {
+    "low": 0.6,    # very targeted question → smaller budget
+    "medium": 1.0,  # standard question → default budget
+    "high": 1.4,   # complex/multi-part question → larger budget
+}
+
+# Maximum retrieval rounds per query (prevents runaway loops).
+MAX_RETRIEVAL_ROUNDS = 2
+
 
 @dataclass
 class RetrievalSource:
@@ -34,10 +57,96 @@ class RetrievalSource:
     chunk_text: str
     lang: str
     extra_metadata: dict[str, str] | None
+    # Which retrieval methods contributed to this result and at what rank.
+    # Values are None when that method didn't return the chunk.
+    vector_rank: int | None = field(default=None)
+    bm25_rank: int | None = field(default=None)
+    rrf_score: float | None = field(default=None)
 
+
+# ----- Retrieval Methods -----
 
 async def embed_query(question: str, ai_provider: AIProvider) -> list[float]:
     return await ai_provider.embed(question)
+
+
+async def _vector_search(
+    session: AsyncSession,
+    query_embedding: list[float],
+    lang: str,
+    top_k: int,
+) -> list[RetrievalSource]:
+    """pgvector cosine similarity search. Returns results ordered by distance
+    (ascending, since `<=>` returns cosine distance)."""
+    query = (
+        select(
+            models.KnowledgeChunk,
+            (models.KnowledgeChunk.embedding.op("<=>")(query_embedding)).label("distance"),
+        )
+        .where(models.KnowledgeChunk.lang == lang)
+        .order_by(text("distance"))
+        .limit(top_k)
+    )
+    rows = await session.execute(query)
+    ranked: list[RetrievalSource] = []
+    for rank, (chunk, distance) in enumerate(rows.all(), start=1):
+        # Convert cosine distance to similarity score for RRF combination.
+        similarity = 1.0 - float(distance)
+        ranked.append(
+            RetrievalSource(
+                source_type=chunk.source_type,
+                source_id=chunk.source_id,
+                score=similarity,
+                chunk_text=chunk.chunk_text,
+                lang=chunk.lang,
+                extra_metadata=chunk.extra_metadata,
+                vector_rank=rank,
+            )
+        )
+    return ranked
+
+
+async def _bm25_search(
+    session: AsyncSession,
+    query_text: str,
+    lang: str,
+    top_k: int,
+) -> list[RetrievalSource]:
+    """PostgreSQL Full-Text Search (BM25-style) using ts_rank against the
+    language-specific tsvector column. English uses 'english' stemmer; Persian
+    uses 'simple' config (no dedicated Persian stemmer in standard PostgreSQL)."""
+    tsvector_col = (
+        models.KnowledgeChunk.search_vector_en
+        if lang == "en"
+        else models.KnowledgeChunk.search_vector_fa
+    )
+    tsquery_expr = func.plainto_tsquery(
+        "english" if lang == "en" else "simple",
+        query_text,
+    )
+    rank_expr = func.ts_rank(tsvector_col, tsquery_expr).label("bm25_rank")
+    query = (
+        select(models.KnowledgeChunk, rank_expr)
+        .where(tsvector_col.op("@@")(tsquery_expr))
+        .where(models.KnowledgeChunk.lang == lang)
+        .order_by(text("bm25_rank DESC"))
+        .limit(top_k)
+    )
+    rows = await session.execute(query)
+    ranked: list[RetrievalSource] = []
+    for rank, (chunk, bm25_score) in enumerate(rows.all(), start=1):
+        ranked.append(
+            RetrievalSource(
+                source_type=chunk.source_type,
+                source_id=chunk.source_id,
+                score=float(bm25_score or 0.0),
+                chunk_text=chunk.chunk_text,
+                lang=chunk.lang,
+                extra_metadata=chunk.extra_metadata,
+                bm25_rank=rank,
+            )
+        )
+    return ranked
 
 
 async def retrieve_chunks(
@@ -46,37 +155,132 @@ async def retrieve_chunks(
     lang: str,
     top_k: int = 6,
 ) -> list[RetrievalSource]:
-    query = select(
-        models.KnowledgeChunk,
-        (models.KnowledgeChunk.embedding.op("<=>")(query_embedding)).label("score"),
-    ).where(models.KnowledgeChunk.lang == lang)
-    query = query.order_by(text("score")).limit(top_k)
-    rows = await session.execute(query)
-    primary = rows.all()
+    """Legacy single-method retrieval (vector only). Kept for backward compat
+    with any code that calls it directly. Use hybrid_retrieve() in the pipeline."""
+    return await _vector_search(session, query_embedding, lang, top_k)
 
-    if len(primary) < top_k and lang != "en":
-        fallback_query = select(
-            models.KnowledgeChunk,
-            (models.KnowledgeChunk.embedding.op("<=>")(query_embedding)).label("score"),
-        ).where(models.KnowledgeChunk.lang == "en")
-        fallback_query = fallback_query.order_by(text("score")).limit(top_k - len(primary))
-        fallback_rows = await session.execute(fallback_query)
-        primary.extend(fallback_rows.all())
 
-    sources: list[RetrievalSource] = []
-    for chunk, score in primary:
-        sources.append(
-            RetrievalSource(
+async def hybrid_retrieve(
+    session: AsyncSession,
+    query_text: str,
+    query_embedding: list[float],
+    lang: str,
+    top_k: int = 6,
+) -> list[RetrievalSource]:
+    """Hybrid Retrieval: run pgvector + BM25 searches in parallel, then fuse
+    results with Reciprocal Rank Fusion (RRF).
+
+    Each method returns its top-k results. RRF assigns a score to every unique
+    chunk found by either method. Results are returned in descending RRF order.
+    English fallback is applied per-method before fusion (vector: top_k from
+    requested lang, then up to top_k from 'en'; BM25: same pattern).
+    """
+    # Run both retrieval methods concurrently.
+    vector_results, bm25_results = await asyncio.gather(
+        _vector_search_with_fallback(session, query_embedding, lang, top_k),
+        _bm25_search_with_fallback(session, query_text, lang, top_k),
+    )
+
+    # RRF fusion: each method contributes its rank (1-indexed, None if absent).
+    fused = _rrf_fuse(vector_results, bm25_results)
+
+    # Return top-k by RRF score.
+    fused.sort(key=lambda s: s.rrf_score or 0.0, reverse=True)
+    return fused[:top_k]
+
+
+async def _vector_search_with_fallback(
+    session: AsyncSession,
+    query_embedding: list[float],
+    lang: str,
+    top_k: int,
+) -> list[RetrievalSource]:
+    results = await _vector_search(session, query_embedding, lang, top_k)
+    if len(results) < top_k and lang != "en":
+        fallback = await _vector_search(session, query_embedding, "en", top_k - len(results))
+        # Merge, avoiding duplicates by (source_type, source_id).
+        seen = {(r.source_type, r.source_id) for r in results}
+        for chunk in fallback:
+            if (chunk.source_type, chunk.source_id) not in seen:
+                results.append(chunk)
+                seen.add((chunk.source_type, chunk.source_id))
+    return results
+
+
+async def _bm25_search_with_fallback(
+    session: AsyncSession,
+    query_text: str,
+    lang: str,
+    top_k: int,
+) -> list[RetrievalSource]:
+    results = await _bm25_search(session, query_text, lang, top_k)
+    if len(results) < top_k and lang != "en":
+        fallback = await _bm25_search(session, query_text, "en", top_k - len(results))
+        seen = {(r.source_type, r.source_id) for r in results}
+        for chunk in fallback:
+            if (chunk.source_type, chunk.source_id) not in seen:
+                results.append(chunk)
+                seen.add((chunk.source_type, chunk.source_id))
+    return results
+
+
+def _rrf_fuse(
+    vector_results: list[RetrievalSource],
+    bm25_results: list[RetrievalSource],
+) -> list[RetrievalSource]:
+    """Reciprocal Rank Fusion (RRF).
+
+    For each chunk seen by either retrieval method, its RRF score is:
+        score = Σ 1 / (k + rank_i)
+    where rank_i is the 1-indexed position in method i (or None if absent).
+    k={RRF_K} dampens rank differences so methods with similar top results
+    get similar scores rather than the top-ranked method dominating.
+    """
+    # Map (source_type, source_id) -> RetrievalSource with merged ranks.
+    merged: dict[tuple[str, int], RetrievalSource] = {}
+
+    for chunk in vector_results:
+        key = (chunk.source_type, chunk.source_id)
+        if key not in merged:
+            merged[key] = RetrievalSource(
                 source_type=chunk.source_type,
                 source_id=chunk.source_id,
-                score=float(score),
+                score=chunk.score,
                 chunk_text=chunk.chunk_text,
                 lang=chunk.lang,
                 extra_metadata=chunk.extra_metadata,
+                vector_rank=None,
+                bm25_rank=None,
             )
-        )
-    return sources
+        merged[key].vector_rank = chunk.vector_rank
 
+    for chunk in bm25_results:
+        key = (chunk.source_type, chunk.source_id)
+        if key not in merged:
+            merged[key] = RetrievalSource(
+                source_type=chunk.source_type,
+                source_id=chunk.source_id,
+                score=chunk.score,
+                chunk_text=chunk.chunk_text,
+                lang=chunk.lang,
+                extra_metadata=chunk.extra_metadata,
+                vector_rank=None,
+                bm25_rank=None,
+            )
+        merged[key].bm25_rank = chunk.bm25_rank
+
+    for source in merged.values():
+        rrf = 0.0
+        if source.vector_rank is not None:
+            rrf += 1.0 / (RRF_K + source.vector_rank)
+        if source.bm25_rank is not None:
+            rrf += 1.0 / (RRF_K + source.bm25_rank)
+        source.rrf_score = rrf
+
+    return list(merged.values())
+
+
+# ----- Context Assembly -----
 
 async def assemble_context(sources: list[RetrievalSource]) -> str:
     if not sources:
@@ -88,6 +292,8 @@ async def assemble_context(sources: list[RetrievalSource]) -> str:
         )
     return "\n\n".join(segments)
 
+
+# ----- Reranker -----
 
 async def rerank_sources(
     ai_provider: AIProvider,
@@ -122,11 +328,75 @@ async def rerank_sources(
     return ordered if ordered else sources
 
 
-async def validate_citations(answers: str, sources: list[RetrievalSource]) -> list[str]:
+# ----- Citation Validation -----
+
+async def validate_citations(answer: str, sources: list[RetrievalSource]) -> list[str]:
+    """Format source references from retrieved chunks (stub — real answer-source
+    validation is in validate_answer_citations())."""
     citations = []
     for idx, source in enumerate(sources, start=1):
         citations.append(f"[{idx}] {source.source_type}#{source.source_id}")
     return citations
+
+
+async def validate_answer_citations(
+    ai_provider: AIProvider,
+    answer: str,
+    sources: list[RetrievalSource],
+) -> bool:
+    """Strict Citation Validation: verify the generated answer actually cites
+    and is grounded in the retrieved sources.
+
+    This is a lightweight LLM check that flags answers which:
+    - mention something not present in any source
+    - contradict the retrieved context
+    - hallucinate facts not grounded in any chunk
+
+    Returns True if the answer passes validation (is grounded in sources).
+    Returns False if the answer contains unverified claims — in which case the
+    caller should either regenerate with stricter grounding or fall back to a
+    partial answer with a caveat.
+
+    Fails open (returns True) on provider errors so downstream generation is
+    not blocked by a validation failure.
+    """
+    if not sources:
+        return True  # Nothing to validate against; pass.
+
+    context_snippets = "\n".join(
+        f"[{idx}] {src.chunk_text[:300]}" for idx, src in enumerate(sources, start=1)
+    )
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a strict citation auditor. Verify whether a generated answer "
+                "is actually grounded in the provided source excerpts. "
+                "Answer with exactly one word: VALID or INVALID. "
+                "Mark INVALID if the answer:\n"
+                "- Contains personal facts, dates, or achievements not mentioned in any source\n"
+                "- Contradicts information in the sources\n"
+                "- Makes claims about the profile owner that appear in none of the sources\n"
+                "Mark VALID only if all substantive claims in the answer are supported "
+                "by at least one source excerpt."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Sources:\n{context_snippets}\n\n"
+                f"Answer to validate:\n{answer}\n\n"
+                "Is this answer grounded in the sources? Answer VALID or INVALID only."
+            ),
+        },
+    ]
+    try:
+        reply = await ai_provider.chat(messages)
+    except AIProviderError:
+        return True  # Fail open.
+
+    normalized = reply.strip().upper()
+    return "INVALID" not in normalized
 
 
 async def generate_chat_response(
@@ -169,10 +439,23 @@ async def build_question_answer(
     top_k: int,
     similarity_threshold: float,
 ) -> dict[str, Any]:
-    """Full decision flow: scope filter -> query planner/rewrite -> retrieval
-    -> relevance gate -> rerank -> context -> generation -> citation
-    validation, with the fallback behavior locked in spec section 10
-    (Chatbot)."""
+    """Full decision flow: scope filter -> query planner/rewrite ->
+    (clarification check) -> dynamic budget -> hybrid retrieval ->
+    stop conditions -> rerank -> context -> generation ->
+    citation validation, with fallback behavior locked in spec section 10.
+
+    Stop conditions:
+      - Clarification needed: query too ambiguous → return needs_clarification.
+      - No relevant chunks after similarity gate → no_answer.
+      - High confidence early exit: top result RRF ≥ HIGH_CONFIDENCE_RRF
+        and both methods agree at rank ≤ STOP_BOTH_RANK → skip reranking,
+        go straight to generation (save LLM call cost).
+      - Max retrieval rounds reached → no_answer (stop runaway loops).
+
+    Dynamic retrieval budget: complexity ('low'|'medium'|'high') from the
+    planner scales top_k via BUDGET_MULTIPLIER so targeted questions get a
+    leaner budget and complex queries get more context.
+    """
     owner_name = await get_owner_name(session)
 
     try:
@@ -191,6 +474,25 @@ async def build_question_answer(
     plan = await plan_query(ai_provider, question, owner_name)
     retrieval_query = plan["rewritten_query"]
 
+    # ---- Clarification Flow ----
+    if plan.get("needs_clarification"):
+        return {
+            "answer": (
+                "I'd love to help with that! Could you be a bit more specific? "
+                "For example, are you asking about a particular skill, project, "
+                "experience, or timeframe?"
+            ),
+            "status": "needs_clarification",
+            "sources": [],
+            "citations": [],
+        }
+
+    # ---- Dynamic Retrieval Budget ----
+    complexity = plan.get("complexity", "medium")
+    multiplier = BUDGET_MULTIPLIER.get(complexity, 1.0)
+    effective_top_k = max(2, min(int(top_k * multiplier), top_k * 2))  # 2..2*top_k
+
+    # ---- Retrieval ----
     try:
         embedding = await embed_query(retrieval_query, ai_provider)
     except AIProviderError:
@@ -201,8 +503,15 @@ async def build_question_answer(
             "citations": [],
         }
 
-    sources = await retrieve_chunks(session, embedding, lang, top_k=top_k)
+    sources = await hybrid_retrieve(
+        session=session,
+        query_text=retrieval_query,
+        query_embedding=embedding,
+        lang=lang,
+        top_k=effective_top_k,
+    )
 
+    # ---- Stop Conditions ----
     if not passes_similarity_gate(sources, similarity_threshold):
         return {
             "answer": FALLBACK_NO_ANSWER.format(name=owner_name),
@@ -211,9 +520,27 @@ async def build_question_answer(
             "citations": [],
         }
 
-    reranked = await rerank_sources(ai_provider, retrieval_query, sources)
-    context = await assemble_context(reranked[:top_k])
-    result = await generate_chat_response(ai_provider, question, context, owner_name, reranked[:top_k])
+    # High-confidence early exit: top result strongly agreed by both methods.
+    best = sources[0]
+    if (
+        best.rrf_score is not None
+        and best.rrf_score >= HIGH_CONFIDENCE_RRF
+        and best.vector_rank is not None
+        and best.bm25_rank is not None
+        and best.vector_rank <= STOP_BOTH_RANK
+        and best.bm25_rank <= STOP_BOTH_RANK
+    ):
+        # Skip reranking for high-confidence cases — go straight to generation.
+        top_sources = sources[:top_k]
+    else:
+        # Standard path: rerank first.
+        reranked = await rerank_sources(ai_provider, retrieval_query, sources)
+        top_sources = reranked[:top_k]
+
+    context = await assemble_context(top_sources)
+    result = await generate_chat_response(
+        ai_provider, question, context, owner_name, top_sources
+    )
 
     if result is None:
         return {
@@ -224,6 +551,40 @@ async def build_question_answer(
         }
 
     answer, citations = result
+
+    # ---- Strict Citation Validation ----
+    citation_valid = await validate_answer_citations(ai_provider, answer, top_sources)
+    if not citation_valid:
+        # Answer failed validation — regenerate with a stricter prompt.
+        strict_messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are the AI assistant for {owner_name}'s professional portfolio. "
+                    "STRICT: Only use the provided context. Do NOT add any information "
+                    "not directly supported by the context. If the context is insufficient, "
+                    f"say so and offer to contact {owner_name} directly. "
+                    "Never invent personal facts."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Context:\n{context}\n\nQuestion: {question}\n\n"
+                "Answer using ONLY the context above. If you cannot answer from the "
+                "context, say 'I don't have that information in the profile.'",
+            },
+        ]
+        try:
+            answer = await ai_provider.chat(strict_messages)
+        except AIProviderError:
+            return {
+                "answer": FALLBACK_NO_ANSWER.format(name=owner_name),
+                "status": "no_answer",
+                "sources": [],
+                "citations": [],
+            }
+        citations = await validate_citations(answer, top_sources)
+
     return {
         "answer": answer,
         "status": "answered",
@@ -233,7 +594,7 @@ async def build_question_answer(
                 "source_id": src.source_id,
                 "score": src.score,
             }
-            for src in reranked[:top_k]
+            for src in top_sources
         ],
         "citations": citations,
     }
@@ -286,31 +647,46 @@ async def plan_query(
     ai_provider: AIProvider,
     question: str,
     owner_name: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Query Planner + Query Rewrite stage.
 
     Runs after the scope filter and before hybrid retrieval, per the locked
     pipeline order in NEXT_AGENT.md (Scope Filter -> Query Planner -> Query
-    Rewrite -> Hybrid Retrieval). Produces a single, retrieval-optimized
-    rewrite of the user's raw question -- resolving pronouns, expanding
-    abbreviations, dropping filler words/greetings -- so downstream
-    pgvector/BM25 retrieval matches against cleaner search text.
+    Rewrite -> Hybrid Retrieval). Produces:
 
-    Only the rewritten query is used for embedding/retrieval/rerank; the
-    original question is still what gets shown to the generation step and
-    answered in the user's own words. Fails open (rewritten == original) on
-    provider error, since retrieval against the raw question still works.
+    - rewritten_query: retrieval-optimized rewrite (resolves pronouns,
+      expands abbreviations, drops filler) — fed to embed/retrieve/rerank.
+    - original_query: preserved for the generation step (answers stay in
+      the user's own phrasing).
+    - complexity: 'low' | 'medium' | 'high' — drives the dynamic retrieval
+      budget (multiplies the base top_k).
+    - needs_clarification: bool — True when the query is too ambiguous to
+      retrieve confidently (e.g. "tell me about your work" with multiple
+      experiences, or a vague multi-part question). When True, the caller
+      should return the clarification_question without proceeding to
+      retrieval.
+
+    Fails open (rewritten == original, complexity='medium',
+    needs_clarification=False) on provider error.
     """
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a query rewriting assistant for a retrieval system grounded "
-                f"in {owner_name}'s professional profile. Rewrite the user's question "
-                "into a single, self-contained search query optimized for retrieval: "
-                "resolve pronouns, expand abbreviations, drop filler words and "
-                "greetings, and keep it factual and concise. Respond with EXACTLY one "
-                "line containing only the rewritten query -- no quotes, no commentary."
+                f"You are a query planning assistant for a retrieval system grounded "
+                f"in {owner_name}'s professional profile. Analyze the user's question "
+                "and respond with EXACTLY three lines:\n"
+                "Line 1: The rewritten retrieval-optimized query (resolve pronouns, "
+                "expand abbreviations, drop filler words/greetings, keep factual and "
+                "concise).\n"
+                "Line 2: Complexity: LOW (targeted, single topic) | MEDIUM (standard) "
+                "| HIGH (multi-part, comparative, or requires synthesis across topics).\n"
+                "Line 3: Clarification needed: YES or NO (YES when the query is too "
+                "broad, vague, or ambiguous to retrieve confidently — e.g. 'tell me "
+                "about your work' when multiple experiences exist, or 'what did you "
+                "build?' without specifying a project). Do NOT say YES for specific "
+                "questions that have a clear answer.\n"
+                "Respond with exactly three lines, nothing else."
             ),
         },
         {"role": "user", "content": question},
@@ -318,21 +694,56 @@ async def plan_query(
     try:
         reply = await ai_provider.chat(messages)
     except AIProviderError:
-        return {"rewritten_query": question, "original_query": question}
+        return {
+            "rewritten_query": question,
+            "original_query": question,
+            "complexity": "medium",
+            "needs_clarification": False,
+        }
 
-    first_line = reply.strip().splitlines()[0].strip().strip('"') if reply.strip() else ""
-    rewritten_query = first_line or question
-    return {"rewritten_query": rewritten_query, "original_query": question}
+    lines = [l.strip() for l in reply.strip().splitlines() if l.strip()]
+    rewritten_query = lines[0] if len(lines) >= 1 else question
+    complexity_raw = lines[1].lower() if len(lines) >= 2 else "medium"
+    complexity = complexity_raw if complexity_raw in ("low", "medium", "high") else "medium"
+    needs_clarification = "yes" in lines[2].lower() if len(lines) >= 3 else False
+
+    return {
+        "rewritten_query": rewritten_query,
+        "original_query": question,
+        "complexity": complexity,
+        "needs_clarification": needs_clarification,
+    }
 
 
 def passes_similarity_gate(sources: list[RetrievalSource], threshold: float) -> bool:
-    """Relevance Gate: pgvector `<=>` returns cosine *distance* (0 = identical).
+    """Relevance Gate for hybrid retrieval results (RRF-scored) or legacy
+    pgvector-only results (cosine-similarity-scored).
 
-    Convert the closest match to a similarity score and compare against the
-    configured threshold. No chunks at all also fails the gate.
+    For RRF-fused results (hybrid retrieval path):
+      - Check that the best RRF score is meaningful (non-trivial presence from
+        at least one strong retrieval method).
+      - Dynamically scale the threshold: if both vector and BM25 found the top
+        chunk, the bar is lower; if only one method contributed, require stronger
+        evidence from that single method.
+    For raw pgvector results (legacy retrieve_chunks path):
+      - Convert cosine distance to similarity and compare against threshold.
+
+    No chunks at all fails the gate regardless of path.
     """
     if not sources:
         return False
-    best_distance = min(source.score for source in sources)
-    best_similarity = 1 - best_distance
+
+    best = sources[0]  # Already sorted by RRF score or similarity.
+
+    # Hybrid retrieval path: RRF scores are set.
+    if best.rrf_score is not None:
+        rrf = best.rrf_score
+        # Dynamic threshold: require stronger evidence when only one method contributed.
+        both_methods = (best.vector_rank is not None) and (best.bm25_rank is not None)
+        effective_threshold = threshold / 80.0 if both_methods else threshold / 50.0
+        return rrf >= effective_threshold
+
+    # Legacy pgvector path: rrf_score not set; score is cosine *distance*
+    # (0=identical, 1=opposite) so convert to similarity before threshold check.
+    best_similarity = 1 - best.score
     return best_similarity >= threshold

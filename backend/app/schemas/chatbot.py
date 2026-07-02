@@ -21,7 +21,7 @@ class ChatSource(BaseModel):
 
 class ChatQueryResponse(BaseModel):
     answer: str
-    # 'answered' | 'unrelated' | 'no_answer' | 'error'
+    # 'answered' | 'unrelated' | 'no_answer' | 'error' | 'needs_clarification'
     status: str = "answered"
     # Populated only for 'answered' responses; frontend should hide this from
     # end users and surface it in admin/debug mode only (spec section 10).

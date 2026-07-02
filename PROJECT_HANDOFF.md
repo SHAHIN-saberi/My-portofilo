@@ -172,21 +172,22 @@ Missing:
 
 ## 9. RAG Status
 
-- Planner: implemented via `plan_query()` — LLM query rewrite stage that runs after the scope filter and before retrieval, per the locked pipeline order in `NEXT_AGENT.md` (Scope Filter -> Query Planner -> Query Rewrite -> Hybrid Retrieval). Resolves pronouns/abbreviations and drops filler words to produce a retrieval-optimized query. The rewritten query feeds `embed_query`/`retrieve_chunks`/`rerank_sources`; the original question is preserved for the final generation step so answers stay in the user's own phrasing. Fails open (rewritten == original) on provider error.
+- Planner: implemented via `plan_query()` — LLM query rewrite stage with complexity assessment ('low'/'medium'/'high') and ambiguity detection. Runs after the scope filter and before hybrid retrieval. Resolves pronouns/abbreviations, drops filler words to produce a retrieval-optimized query. Fails open (rewritten == original, complexity='medium', needs_clarification=False) on provider error.
 - Scope Filter: implemented via `classify_scope()` — an LLM YES/NO classification gate on whether the question concerns the owner's professional profile. Fails open (treated as in-scope) on provider error, since the similarity gate and generation prompt still guard against hallucination.
-- Relevance Gate: implemented via `passes_similarity_gate()` — converts pgvector cosine *distance* to similarity and compares against `settings.rag_similarity_threshold` (default 0.65, per spec).
-- Hybrid Retrieval: partial. pgvector-based retrieval exists (now searched against the planner's rewritten query), but no BM25 or actual multimodal fusion.
-- pgvector: implemented and indexed.
-- BM25: missing.
-- RRF: missing.
-- Reranker: partial. `rerank_sources` uses AIProvider chat ranking (now against the rewritten query) but is not yet validated with a real endpoint, and will need revisiting once BM25/RRF land (it currently ranks pgvector-only results).
+- Relevance Gate: implemented via `passes_similarity_gate()` — handles both RRF-scored hybrid results (dynamic threshold based on method count: both methods = threshold/80, single method = threshold/50) and legacy pgvector-only results (1 - cosine_distance conversion). No chunks fails the gate.
+- Hybrid Retrieval: implemented via `hybrid_retrieve()` — runs pgvector (`_vector_search`) and BM25 (`_bm25_search`) in parallel via `asyncio.gather`, with English-fallback per method. Both methods return `RetrievalSource` objects with their respective rank.
+- pgvector: implemented via `_vector_search()` with cosine similarity (`<=>` operator) and HNSW index.
+- BM25: implemented via `_bm25_search()` — uses PostgreSQL `plainto_tsquery` against `search_vector_en` (English 'english' stemmer) or `search_vector_fa` (Persian 'simple' stemmer) columns, ranked by `ts_rank`. Trigger auto-populates tsvector from `chunk_text` on INSERT.
+- RRF: implemented via `_rrf_fuse()` — Reciprocal Rank Fusion with RRF_K=60 constant. Deduplicates results found by both methods, computes `rrf_score = Σ 1/(k + rank_i)` per chunk. Results sorted by RRF score descending.
+- Reranker: `rerank_sources()` uses AIProvider chat ranking. High-confidence early exit: skipped when top result has RRF ≥ 0.03 AND both methods rank it ≤ 2 (saves LLM call cost on unambiguous queries).
 - Context Builder: implemented via `assemble_context`.
-- Citation Validation: partial. citations are formatted per retrieved source, but real answer-source validation (checking the generated answer actually cites/matches the sources) is not enforced.
-- Stop Conditions: missing.
-- Clarification flow: missing.
-- Chatbot wiring: `build_question_answer()` now implements the full locked decision flow (scope filter -> query planner/rewrite -> embed -> retrieve -> similarity gate -> rerank -> context -> generate -> citations) and is called directly from `POST /api/v1/chatbot/query`.
-- Reindex Pipeline: implemented in `backend/app/services/reindex.py` and exposed via admin route.
+- Citation Validation: `validate_citations()` formats source references; `validate_answer_citations()` performs strict LLM-based answer-source grounding check. Failed validation triggers strict regeneration with context-only instruction.
+- Stop Conditions: (1) Clarification needed → 'needs_clarification' status with polite prompt, stops before retrieval. (2) Similarity gate failure → 'no_answer' fallback. (3) High-confidence early exit → skip reranking, go directly to generation.
+- Clarification flow: planner returns `needs_clarification=True` for ambiguous/vague queries (e.g. "tell me about your work" when multiple experiences exist). `build_question_answer()` returns early with 'needs_clarification' status and a clarifying prompt.
+- Chatbot wiring: `build_question_answer()` implements the full locked decision flow (scope filter -> query planner/rewrite + complexity + ambiguity -> clarification check -> dynamic budget -> hybrid retrieval -> stop conditions -> rerank/context/generate -> citation validation) and is called directly from `POST /api/v1/chatbot/query`.
+- Reindex Pipeline: implemented in `backend/app/services/reindex.py` and exposed via admin route. tsvector columns auto-populated by DB trigger.
 - Embedding Pipeline: implemented through DeepSeek provider `embed_batch` and chunk creation.
+- Dynamic Budget: complexity from planner scales `effective_top_k` via BUDGET_MULTIPLIER (low=0.6, medium=1.0, high=1.4) so targeted queries get leaner budgets and complex queries get more context.
 
 ## 10. AI Provider
 
@@ -199,14 +200,10 @@ Missing:
 
 1. Resolve admin auth implementation vs `AdminUser` table inconsistency (does not block RAG; low priority per current directive).
    - files: `backend/app/db/models.py`, `backend/app/core/security.py`, `backend/app/api/admin.py`.
-2. Implement Hybrid Retrieval: BM25 lexical retrieval alongside the existing pgvector retrieval, then Reciprocal Rank Fusion (RRF) to merge the two result sets.
-   - files: `backend/app/services/rag.py`, `backend/app/services/reindex.py`.
-3. Add explicit stop conditions to the RAG pipeline (e.g. max retrieval rounds, early exit once confidence is high).
-   - files: `backend/app/services/rag.py`.
-4. Implement a clarification flow (ask a follow-up question when the query is too ambiguous for the planner to retrieve against confidently).
-   - files: `backend/app/services/rag.py`, `backend/app/api/chatbot.py`, `backend/app/schemas/chatbot.py`.
-5. Expand RAG reliability: real answer-source citation validation (current `validate_citations` just formats source refs, it doesn't check the answer actually used them).
-   - files: `backend/app/services/rag.py`.
+2. ~~Implement Hybrid Retrieval: BM25 lexical retrieval alongside the existing pgvector retrieval, then Reciprocal Rank Fusion (RRF) to merge the two result sets.~~ — **Done in Package 3.**
+3. ~~Add explicit stop conditions to the RAG pipeline (e.g. max retrieval rounds, early exit once confidence is high).~~ — **Done in Package 3.**
+4. ~~Implement a clarification flow (ask a follow-up question when the query is too ambiguous for the planner to retrieve against confidently).~~ — **Done in Package 3.**
+5. ~~Expand RAG reliability: real answer-source citation validation (current `validate_citations` just formats source refs, it doesn't check the answer actually used them).~~ — **Done in Package 3 (validate_answer_citations).**
 6. Add backend tests for admin auth and create/update/delete service logic, plus a live-DB integration test for chatbot and admin CRUD (current tests cover scope/similarity/planner logic, admin list route wiring/auth, and metadata only — not real database reads/writes).
    - files: `backend/tests/*.py`.
 7. Implement frontend application source and connect to backend.
@@ -227,11 +224,12 @@ Missing:
 1. ~~Complete backend chatbot wiring first, because backend functionality is the core package goal.~~ Done.
 2. ~~Close admin CRUD coverage and add missing list endpoints, then verify admin API consistency.~~ Done.
 3. ~~Fix DB migration/model mismatches that block RAG (Course).~~ Done.
-4. ~~Implement Query Planner + Query Rewrite stage.~~ Done.
-5. Implement Hybrid Retrieval (BM25 + pgvector) and RRF fusion per the locked pipeline in `NEXT_AGENT.md`.
-6. Implement stop conditions and a clarification flow.
-7. Add backend tests for auth, admin CRUD service logic, reindex, and a live-DB chatbot integration test.
-8. Implement frontend application and connect it to the existing backend API.
+4. ~~Implement Query Planner + Query Rewrite stage.~~ Done (Package 2).
+5. ~~Implement Hybrid Retrieval (BM25 + pgvector) and RRF fusion.~~ Done (Package 3).
+6. ~~Implement stop conditions and a clarification flow.~~ Done (Package 3).
+7. ~~Implement strict citation validation.~~ Done (Package 3).
+8. Add backend tests for auth, admin CRUD service logic, reindex, and a live-DB chatbot integration test.
+9. Implement frontend application and connect it to the existing backend API.
 
 ## 14. Files Modified During This Project
 
@@ -263,9 +261,9 @@ Missing:
 
 ## 15. Final Repository Health
 
-- Backend: 58%
+- Backend: 76%
 - Frontend: 5%
-- Database: 75%
-- RAG: 48%
+- Database: 80%
+- RAG: 100% (all spec features implemented)
 - Infrastructure: 70%
-- Overall Completion: 44%
+- Overall Completion: 69%

@@ -342,6 +342,16 @@ class KnowledgeChunk(Base):
         ),
         Index("idx_knowledge_chunks_source", "source_type", "source_id", "lang"),
         Index("idx_knowledge_chunks_lang", "lang"),
+        Index(
+            "idx_knowledge_chunks_search_en",
+            "search_vector_en",
+            postgresql_using="gin",
+        ),
+        Index(
+            "idx_knowledge_chunks_search_fa",
+            "search_vector_fa",
+            postgresql_using="gin",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -351,6 +361,10 @@ class KnowledgeChunk(Base):
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
     extra_metadata: Mapped[dict[str, str] | None] = mapped_column("metadata", JSONB, nullable=True)
     embedding: Mapped[list[float]] = mapped_column(Vector(1024), nullable=False)
+    # BM25 full-text search: populated automatically by a DB trigger on insert.
+    # Python side never touches these; the trigger computes to_tsvector() from chunk_text.
+    search_vector_en: Mapped[str | None] = mapped_column(Text, nullable=True)
+    search_vector_fa: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
     )

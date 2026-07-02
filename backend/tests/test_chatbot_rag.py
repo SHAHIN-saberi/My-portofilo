@@ -2,20 +2,24 @@
 
 Scope: pure-logic pieces that don't require a live Postgres/pgvector
 instance (scope classification parsing, similarity gate math, fallback
-message formatting). DB-backed retrieval is exercised via integration/manual
-testing against a running Postgres instance, not here.
+message formatting, plan complexity, citation validation). DB-backed
+retrieval is exercised via integration/manual testing against a running
+Postgres instance, not here.
 """
 import asyncio
 from collections.abc import AsyncIterator
 
 from app.services.ai_provider.base import AIProvider, AIProviderError
 from app.services.rag import (
+    BUDGET_MULTIPLIER,
+    HIGH_CONFIDENCE_RRF,
     FALLBACK_NO_ANSWER,
     FALLBACK_UNRELATED,
     RetrievalSource,
     classify_scope,
     passes_similarity_gate,
     plan_query,
+    validate_answer_citations,
 )
 
 
@@ -114,3 +118,95 @@ def test_plan_query_fails_open_on_provider_error():
     result = asyncio.run(plan_query(provider, "python skills?", "Shahin"))
     assert result["rewritten_query"] == "python skills?"
     assert result["original_query"] == "python skills?"
+
+
+def test_plan_query_returns_complexity_field():
+    """plan_query should return a complexity field (low/medium/high)."""
+    provider = FakeAIProvider(chat_reply="Shahin's Python skills\nMEDIUM\nNO")
+    result = asyncio.run(plan_query(provider, "what python skills?", "Shahin"))
+    assert result["complexity"] == "medium"
+    assert result["needs_clarification"] is False
+
+
+def test_plan_query_complexity_high():
+    provider = FakeAIProvider(chat_reply="Shahin's experience at Acme Corp in 2023\nHIGH\nNO")
+    result = asyncio.run(plan_query(provider, "what did Shahin do at Acme?", "Shahin"))
+    assert result["complexity"] == "high"
+
+
+def test_plan_query_complexity_low():
+    provider = FakeAIProvider(chat_reply="FastAPI web framework expertise\nLOW\nNO")
+    result = asyncio.run(plan_query(provider, "Does Shahin know FastAPI?", "Shahin"))
+    assert result["complexity"] == "low"
+
+
+def test_plan_query_needs_clarification_yes():
+    provider = FakeAIProvider(chat_reply="Shahin's work experience\nMEDIUM\nYES")
+    result = asyncio.run(plan_query(provider, "tell me about your work", "Shahin"))
+    assert result["needs_clarification"] is True
+
+
+def test_plan_query_needs_clarification_no():
+    provider = FakeAIProvider(chat_reply="Shahin's Python skills\nMEDIUM\nNO")
+    result = asyncio.run(plan_query(provider, "What Python frameworks does Shahin use?", "Shahin"))
+    assert result["needs_clarification"] is False
+
+
+def test_plan_query_fails_open_complexity_medium():
+    provider = FakeAIProvider(raise_error=True)
+    result = asyncio.run(plan_query(provider, "any question", "Shahin"))
+    assert result["complexity"] == "medium"
+    assert result["needs_clarification"] is False
+
+
+def test_budget_multiplier_present():
+    assert BUDGET_MULTIPLIER["low"] < 1.0
+    assert BUDGET_MULTIPLIER["medium"] == 1.0
+    assert BUDGET_MULTIPLIER["high"] > 1.0
+
+
+def test_high_confidence_rrf_threshold():
+    assert HIGH_CONFIDENCE_RRF > 0
+
+
+def test_validate_answer_citations_valid():
+    provider = FakeAIProvider(chat_reply="VALID")
+    sources = [
+        RetrievalSource(
+            source_type="skill", source_id=1, score=0.9,
+            chunk_text="Python expert with 5 years of experience", lang="en",
+            extra_metadata=None,
+        )
+    ]
+    result = asyncio.run(validate_answer_citations(provider, "Shahin is a Python expert", sources))
+    assert result is True
+
+
+def test_validate_answer_citations_invalid():
+    provider = FakeAIProvider(chat_reply="INVALID")
+    sources = [
+        RetrievalSource(
+            source_type="skill", source_id=1, score=0.9,
+            chunk_text="Python expert", lang="en", extra_metadata=None,
+        )
+    ]
+    result = asyncio.run(validate_answer_citations(provider, "Shahin won a Nobel prize in physics", sources))
+    assert result is False
+
+
+def test_validate_answer_citations_fails_open():
+    provider = FakeAIProvider(raise_error=True)
+    sources = [
+        RetrievalSource(
+            source_type="skill", source_id=1, score=0.9,
+            chunk_text="Python expert", lang="en", extra_metadata=None,
+        )
+    ]
+    result = asyncio.run(validate_answer_citations(provider, "Any answer", sources))
+    assert result is True  # Fails open
+
+
+def test_validate_answer_citations_empty_sources():
+    provider = FakeAIProvider(chat_reply="VALID")
+    result = asyncio.run(validate_answer_citations(provider, "Any answer", []))
+    assert result is True  # Nothing to validate against → pass

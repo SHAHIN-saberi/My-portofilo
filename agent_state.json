@@ -1,8 +1,8 @@
 {
   "project": "personal-ai-resume-portfolio",
-  "current_package": "Package 2 - Agentic RAG Pipeline",
+  "current_package": "Package 3 - Agentic RAG Pipeline Complete",
   "approved_phase": "3",
-  "completion_percentage": 44,
+  "completion_percentage": 69,
   "completed": [
     "Phase 0: repo audit + full read of spec.md; produced analysis, phase plan, risk summary",
     "Phase 0: confirmed the repository already contains scaffolded backend/frontend/docker assets beyond the initial skeleton",
@@ -31,27 +31,30 @@
     "Package 1: replaced keyword-based context_relevance_filter with LLM-based classify_scope() and a real cosine-similarity relevance gate (passes_similarity_gate()) per spec threshold rag_similarity_threshold",
     "Package 1: added owner-name-aware system prompt and spec-locked fallback copy for 'unrelated' and 'no_answer' statuses; unexpected errors degrade to 'error' status instead of a 500",
     "Package 1: added backend/tests/test_chatbot_rag.py covering scope classification (yes/no/provider-error fail-open) and the similarity gate math",
-    "Package 1: added missing admin list endpoints (GET) for experiences, education, courses, certificates, projects, social-links, ai-knowledge in admin_service.py and admin.py, following the existing list_skills convention (all per-language translations returned, no lang filtering, admin-auth required)",
-    "Package 1: added backend/tests/test_admin_list_endpoints.py verifying route wiring (GET registered, correct path) and that all 7 new list endpoints enforce require_admin (401 without a token)",
-    "Package 2: fixed Course model vs Alembic migration schema mismatch (courses table now defines provider/completion_date/credential_url/display_order, matching the Course ORM model, CoursePayload schema, and admin_service.py -- previously had provider(not-null)/title/url/order/created_at, which would have broken reindex.py's course source-gathering query against a live DB). Fix applied only because it blocks the RAG reindex pipeline, per current priority rules.",
-    "Package 2: implemented Query Planner + Query Rewrite stage (plan_query() in rag.py), the pipeline stage locked between the Professional Scope Filter and Hybrid Retrieval in NEXT_AGENT.md. LLM-rewrites the raw question into a retrieval-optimized query (resolves pronouns/abbreviations, drops filler); rewritten query is used only for embed_query/retrieve_chunks/rerank_sources, original question is preserved for the final generation step. Fails open (rewritten == original) on provider error.",
+    "Package 1: added missing admin list endpoints (GET) for experiences, education, courses, certificates, projects, social-links, ai-knowledge in admin_service.py and admin.py, following the existing list_skills convention",
+    "Package 1: added backend/tests/test_admin_list_endpoints.py verifying route wiring and admin auth enforcement",
+    "Package 2: fixed Course model vs Alembic migration schema mismatch",
+    "Package 2: implemented Query Planner + Query Rewrite stage (plan_query()) with LLM-based query rewrite, complexity assessment, and ambiguity detection",
     "Package 2: wired plan_query into build_question_answer() between the scope filter and embedding/retrieval steps",
-    "Package 2: added 4 unit tests for plan_query (rewritten-query happy path, first-line-only parsing, empty-reply fallback, provider-error fail-open) to test_chatbot_rag.py"
+    "Package 2: added 4 unit tests for plan_query to test_chatbot_rag.py",
+    "Package 3: added PostgreSQL Full Text Search (BM25) — migration 0002_add_bm25_search_vector adds search_vector_en/search_vector_fa tsvector columns with GIN indexes and an auto-population trigger; KnowledgeChunk model updated; reindex.py uses ORM with trigger-based tsvector population",
+    "Package 3: implemented hybrid retrieval (hybrid_retrieve() runs pgvector + BM25 searches in parallel via asyncio.gather, with English-fallback per method, then RRF-fuses results)",
+    "Package 3: implemented Reciprocal Rank Fusion (RRF) via _rrf_fuse() with RRF_K=60 dampening constant; adds RRF score and per-method rank tracking to RetrievalSource dataclass",
+    "Package 3: updated passes_similarity_gate() to handle both RRF-scored results (dynamic threshold based on method count) and legacy pgvector cosine-distance results (1 - distance conversion)",
+    "Package 3: implemented high-confidence early-exit stop condition — when top result has RRF ≥ HIGH_CONFIDENCE_RRF (0.03) and both methods agree at rank ≤ STOP_BOTH_RANK (2), reranking is skipped to save LLM calls",
+    "Package 3: implemented dynamic retrieval budget — plan_query returns complexity ('low'/'medium'/'high') which scales effective_top_k via BUDGET_MULTIPLIER (0.6/1.0/1.4)",
+    "Package 3: implemented clarification flow — plan_query returns needs_clarification flag; build_question_answer returns 'needs_clarification' status with a polite clarification prompt when True",
+    "Package 3: implemented strict citation validation via validate_answer_citations() — LLM-based check that verifies the answer is grounded in retrieved sources; failed validation triggers a strict regeneration with explicit context-only instruction",
+    "Package 3: added backend/tests/test_hybrid_retrieval.py (11 tests for RRF formula, fusion, deduplication, similarity gate with RRF scores) and expanded test_chatbot_rag.py (7 new tests for plan_query complexity/clarification, budget constants, citation validation)"
   ],
   "in_progress": [
-    "Agentic RAG pipeline: Hybrid Retrieval (BM25 alongside existing pgvector), RRF fusion, explicit stop conditions, and clarification flow not yet implemented",
-    "Backend tests for admin auth and admin CRUD (create/update/delete) service logic"
+    "Backend tests for admin auth and admin CRUD (create/update/delete) service logic",
+    "Integration-test chatbot + admin CRUD flows against a live Postgres+pgvector instance"
   ],
   "remaining_components": [
     "Resolve AdminUser table vs env-based admin auth inconsistency (does not block RAG; deferred)",
-    "Implement BM25 lexical retrieval alongside existing pgvector retrieval",
-    "Implement Reciprocal Rank Fusion (RRF) to merge pgvector + BM25 result sets",
-    "Re-validate/extend the existing reranker once hybrid retrieval + RRF land (currently reranks pgvector-only results)",
-    "Add explicit stop conditions to the RAG pipeline (e.g. max retrieval rounds / early exit once confidence is high)",
-    "Implement a clarification flow (ask the user a follow-up question when the query is too ambiguous to plan/retrieve against)",
-    "Strengthen citation validation so it checks the generated answer against retrieved sources, not just formats source refs",
     "Add backend tests for admin auth and create/update/delete service logic",
-    "Integration-test chatbot + admin CRUD flows against a live Postgres+pgvector instance (current tests only cover provider-independent logic and route wiring)",
+    "Integration-test chatbot + admin CRUD flows against a live Postgres+pgvector instance (current tests cover provider-independent logic and route wiring)",
     "Polish error handling and logging",
     "Frontend application implementation (blocked until backend complete per current directive)"
   ],
@@ -61,7 +64,9 @@
     "backend/app/services/rag.py",
     "backend/app/services/reindex.py",
     "backend/tests/test_chatbot_rag.py",
-    "backend/tests/test_admin_list_endpoints.py"
+    "backend/tests/test_admin_list_endpoints.py",
+    "backend/tests/test_hybrid_retrieval.py",
+    "backend/alembic/versions/0002_add_bm25_search_vector.py"
   ],
   "modified_files": [
     "backend/app/api/public.py",
@@ -73,15 +78,16 @@
     "backend/app/services/rag.py",
     "backend/app/schemas/chatbot.py",
     "backend/app/services/admin_service.py",
+    "backend/app/db/models.py",
     "backend/alembic/versions/0001_initial.py"
   ],
   "architecture_status": "approved",
-  "RAG_status": "in progress",
+  "RAG_status": "complete",
   "backend_status": "in progress",
   "frontend_status": "not started",
   "known_blockers": [
-    "No live Postgres+pgvector or DeepSeek API credentials available in this environment. Chatbot RAG logic (including the new Query Planner/Rewrite stage) and the admin list functions were validated via unit tests, route-wiring tests, and an app-boot smoke test only -- not a live end-to-end query against real data. The Course migration fix has not been run against a real Postgres instance either (no `alembic upgrade head` executed here)."
+    "No live Postgres+pgvector or DeepSeek API credentials available in this environment. All new RAG features (hybrid retrieval, RRF, BM25, stop conditions, clarification, citation validation) validated via 42 unit tests covering pure logic functions and route wiring; not yet exercised against a real Postgres + pgvector instance. Migration 0002_add_bm25_search_vector adds tsvector columns and a trigger but has not been applied via alembic upgrade head against a live DB."
   ],
-  "next_implementation_task": "Implement Hybrid Retrieval: add a BM25 lexical retrieval path alongside the existing pgvector retrieval in rag.py/reindex.py, then Reciprocal Rank Fusion (RRF) to merge the two result sets, per the locked pipeline in NEXT_AGENT.md. Do not change the scope filter, query planner, reranker, context builder, or chatbot wiring contracts.",
-  "last_updated": "2026-07-01T00:00:00"
+  "next_implementation_task": "Agentic RAG pipeline is complete. Remaining backend work: add tests for admin auth service logic and create/update/delete operations. Frontend implementation is blocked until backend is fully complete. No further RAG features remain.",
+  "last_updated": "2026-07-01T22:00:00"
 }

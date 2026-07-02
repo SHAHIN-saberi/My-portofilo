@@ -247,6 +247,8 @@ async def _create_chunks_from_source(
         return []
 
     embeddings = await ai_provider.embed_batch([chunk["chunk_text"] for chunk in chunks_data])
+    # tsvector columns (search_vector_en, search_vector_fa) are populated
+    # automatically by the DB trigger; Python side leaves them as NULL.
     created = []
     for chunk_data, embedding in zip(chunks_data, embeddings):
         created.append(
@@ -268,6 +270,7 @@ async def reindex_all(
     settings: Settings,
     lang: str,
 ) -> int:
+    # Clear existing chunks for the target language
     await session.execute(delete(models.KnowledgeChunk).where(models.KnowledgeChunk.lang == lang))
     sources = await _gather_sources(session, lang)
     chunks: list[models.KnowledgeChunk] = []
