@@ -23,4 +23,6 @@ class ChatQueryResponse(BaseModel):
     answer: str
     # 'answered' | 'unrelated' | 'no_answer' | 'error'
     status: str = "answered"
+    # Populated only for 'answered' responses; frontend should hide this from
+    # end users and surface it in admin/debug mode only (spec section 10).
     sources: Optional[list[ChatSource]] = None

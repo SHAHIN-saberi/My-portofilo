@@ -283,3 +283,10 @@ Do not restart it.
 Do not expand its scope.
 
 Implement the next unfinished task with the smallest correct change.
+Priority Rule
+
+When the project reaches approximately 80% backend completion, new packages must prioritize completing the core business logic over auxiliary CRUD improvements.
+
+Core architecture always has higher priority than convenience features.
+
+Do not spend implementation packages on low-impact improvements while critical architecture remains incomplete.

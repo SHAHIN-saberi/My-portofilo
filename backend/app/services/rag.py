@@ -3,12 +3,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import cast, func, literal, select, text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.db import models
 from app.services.ai_provider.base import AIProvider, AIProviderError
+
+FALLBACK_UNRELATED = (
+    "I'm the AI assistant for {name}'s professional profile. I can only answer "
+    "questions about their background, skills, experience, and projects. How can "
+    "I help with that?"
+)
+FALLBACK_NO_ANSWER = (
+    "I don't have specific information about that in {name}'s profile. Please "
+    "reach out directly using the contact details on the site."
+)
+FALLBACK_ERROR = (
+    "I'm sorry, I couldn't generate an answer right now. Please try again later "
+    "or reach out directly using the contact details on the site."
+)
+DEFAULT_OWNER_NAME = "the profile owner"
 
 
 @dataclass
@@ -118,24 +133,29 @@ async def generate_chat_response(
     ai_provider: AIProvider,
     question: str,
     context: str,
-    lang: str,
+    owner_name: str,
     sources: list[RetrievalSource],
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str]] | None:
+    """Returns (answer, citations), or None if the provider call failed."""
     system_prompt = (
-        "You are an assistant that answers questions only using the provided owner-specific knowledge. "
-        "Do not hallucinate new facts. If the answer is unknown, say so and suggest contacting the owner."
+        f"You are the AI assistant for {owner_name}'s professional portfolio. "
+        "Use the retrieved context below as your primary source of truth. You may "
+        "use general knowledge only to explain technical concepts naturally (e.g. "
+        "'React is a JavaScript library...'), but never invent personal facts, "
+        f"dates, projects, or achievements about {owner_name}. If the context only "
+        "partially answers the question, answer with what is available and clearly "
+        "note the limitation, offering to contact the owner for more detail. Be "
+        "concise, professional, and friendly, with light controlled humor only "
+        "when appropriate. Never be careless or misleading."
     )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
     ]
     try:
-        answer = await ai_provider.chat(messages, context=None)
-    except AIProviderError as exc:
-        return (
-            "I'm sorry, I couldn't generate an answer right now. Please try again later.",
-            [],
-        )
+        answer = await ai_provider.chat(messages)
+    except AIProviderError:
+        return None
 
     citations = await validate_citations(answer, sources)
     return answer, citations
@@ -147,15 +167,62 @@ async def build_question_answer(
     question: str,
     lang: str,
     top_k: int,
+    similarity_threshold: float,
 ) -> dict[str, Any]:
-    embedding = await embed_query(question, ai_provider)
+    """Full decision flow: scope filter -> retrieval -> relevance gate ->
+    rerank -> context -> generation -> citation validation, with the fallback
+    behavior locked in spec section 10 (Chatbot)."""
+    owner_name = await get_owner_name(session)
+
+    try:
+        in_scope = await classify_scope(ai_provider, question, owner_name)
+    except AIProviderError:
+        in_scope = True
+
+    if not in_scope:
+        return {
+            "answer": FALLBACK_UNRELATED.format(name=owner_name),
+            "status": "unrelated",
+            "sources": [],
+            "citations": [],
+        }
+
+    try:
+        embedding = await embed_query(question, ai_provider)
+    except AIProviderError:
+        return {
+            "answer": FALLBACK_ERROR,
+            "status": "error",
+            "sources": [],
+            "citations": [],
+        }
+
     sources = await retrieve_chunks(session, embedding, lang, top_k=top_k)
+
+    if not passes_similarity_gate(sources, similarity_threshold):
+        return {
+            "answer": FALLBACK_NO_ANSWER.format(name=owner_name),
+            "status": "no_answer",
+            "sources": [],
+            "citations": [],
+        }
+
     reranked = await rerank_sources(ai_provider, question, sources)
-    context = await assemble_context(reranked[: top_k])
-    answer, citations = await generate_chat_response(ai_provider, question, context, lang, reranked[:top_k])
+    context = await assemble_context(reranked[:top_k])
+    result = await generate_chat_response(ai_provider, question, context, owner_name, reranked[:top_k])
+
+    if result is None:
+        return {
+            "answer": FALLBACK_ERROR,
+            "status": "error",
+            "sources": [],
+            "citations": [],
+        }
+
+    answer, citations = result
     return {
         "answer": answer,
-        "status": "answered" if answer else "no_answer",
+        "status": "answered",
         "sources": [
             {
                 "source_type": src.source_type,
@@ -168,14 +235,57 @@ async def build_question_answer(
     }
 
 
-async def context_relevance_filter(
-    session: AsyncSession,
+async def get_owner_name(session: AsyncSession) -> str:
+    profile = await session.scalar(select(models.Profile).limit(1))
+    if profile and profile.name:
+        return profile.name
+    return DEFAULT_OWNER_NAME
+
+
+async def classify_scope(
+    ai_provider: AIProvider,
     question: str,
-    top_k: int = 10,
+    owner_name: str,
 ) -> bool:
-    question_words = set(question.lower().split())
-    chunks = (await session.execute(select(models.KnowledgeChunk).limit(10))).scalars().all()
-    for chunk in chunks:
-        if any(word in chunk.chunk_text.lower() for word in question_words):
-            return True
-    return bool(chunks)
+    """Professional Scope Filter: lightweight LLM YES/NO classification.
+
+    Returns True if the question is in-scope (about the owner's professional
+    profile). Fails open on provider errors, since the similarity gate and
+    generation step downstream still guard against hallucinated answers.
+    """
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a strict binary classifier. Answer with exactly one word: YES or NO.",
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Is this question about {owner_name}'s professional profile "
+                "(identity, skills, experience, education, courses, certificates, "
+                f"projects, technologies, work details, or contact info)? "
+                f"Question: {question}\nAnswer YES or NO only."
+            ),
+        },
+    ]
+    try:
+        reply = await ai_provider.chat(messages)
+    except AIProviderError:
+        return True
+    normalized = reply.strip().upper()
+    if "NO" in normalized and "YES" not in normalized:
+        return False
+    return True
+
+
+def passes_similarity_gate(sources: list[RetrievalSource], threshold: float) -> bool:
+    """Relevance Gate: pgvector `<=>` returns cosine *distance* (0 = identical).
+
+    Convert the closest match to a similarity score and compare against the
+    configured threshold. No chunks at all also fails the gate.
+    """
+    if not sources:
+        return False
+    best_distance = min(source.score for source in sources)
+    best_similarity = 1 - best_distance
+    return best_similarity >= threshold

@@ -37,7 +37,14 @@ from app.services.admin_service import (
     delete_social_link,
     get_profile,
     knowledge_status,
+    list_ai_knowledge_entries,
+    list_certificates,
+    list_courses,
+    list_education,
+    list_experiences,
+    list_projects,
     list_skills,
+    list_social_links,
     update_ai_knowledge_entry,
     update_certificate,
     update_course,
@@ -134,6 +141,13 @@ async def delete_skill_endpoint(
     return Message(message="Skill deleted")
 
 
+@router.get("/experiences", response_model=Envelope)
+async def list_experiences_endpoint(
+    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_experiences(session))
+
+
 @router.post("/experiences", response_model=Envelope)
 async def create_experience_endpoint(
     payload: ExperiencePayload,
@@ -164,6 +178,13 @@ async def delete_experience_endpoint(
 ) -> Message:
     await delete_experience(session, experience_id)
     return Message(message="Experience deleted")
+
+
+@router.get("/education", response_model=Envelope)
+async def list_education_endpoint(
+    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_education(session))
 
 
 @router.post("/education", response_model=Envelope)
@@ -198,6 +219,13 @@ async def delete_education_endpoint(
     return Message(message="Education deleted")
 
 
+@router.get("/courses", response_model=Envelope)
+async def list_courses_endpoint(
+    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_courses(session))
+
+
 @router.post("/courses", response_model=Envelope)
 async def create_course_endpoint(
     payload: CoursePayload,
@@ -228,6 +256,13 @@ async def delete_course_endpoint(
 ) -> Message:
     await delete_course(session, course_id)
     return Message(message="Course deleted")
+
+
+@router.get("/certificates", response_model=Envelope)
+async def list_certificates_endpoint(
+    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_certificates(session))
 
 
 @router.post("/certificates", response_model=Envelope)
@@ -262,6 +297,13 @@ async def delete_certificate_endpoint(
     return Message(message="Certificate deleted")
 
 
+@router.get("/projects", response_model=Envelope)
+async def list_projects_endpoint(
+    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_projects(session))
+
+
 @router.post("/projects", response_model=Envelope)
 async def create_project_endpoint(
     payload: ProjectPayload,
@@ -294,6 +336,13 @@ async def delete_project_endpoint(
     return Message(message="Project deleted")
 
 
+@router.get("/social-links", response_model=Envelope)
+async def list_social_links_endpoint(
+    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_social_links(session))
+
+
 @router.post("/social-links", response_model=Envelope)
 async def create_social_link_endpoint(
     payload: SocialLinkPayload,
@@ -324,6 +373,13 @@ async def delete_social_link_endpoint(
 ) -> Message:
     await delete_social_link(session, social_link_id)
     return Message(message="Social link deleted")
+
+
+@router.get("/ai-knowledge", response_model=Envelope)
+async def list_ai_knowledge_entries_endpoint(
+    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_ai_knowledge_entries(session))
 
 
 @router.post("/ai-knowledge", response_model=Envelope)

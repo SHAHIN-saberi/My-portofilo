@@ -140,6 +140,34 @@ async def delete_skill(session: AsyncSession, skill_id: int) -> None:
     await session.commit()
 
 
+async def list_experiences(session: AsyncSession) -> list[dict]:
+    experiences = (
+        await session.execute(select(models.Experience).order_by(models.Experience.display_order))
+    ).scalars().all()
+    result = []
+    for experience in experiences:
+        result.append(
+            {
+                "id": experience.id,
+                "company": experience.company,
+                "start_date": experience.start_date,
+                "end_date": experience.end_date,
+                "is_current": experience.is_current,
+                "location": experience.location,
+                "display_order": experience.display_order,
+                "translations": [
+                    {
+                        "lang": translation.lang,
+                        "role": translation.role,
+                        "description": translation.description,
+                    }
+                    for translation in experience.translations
+                ],
+            }
+        )
+    return result
+
+
 async def create_experience(session: AsyncSession, payload: ExperiencePayload) -> dict:
     experience = models.Experience(**payload.model_dump(exclude_none=True, exclude={"translations"}))
     if payload.translations:
@@ -166,6 +194,34 @@ async def update_experience(session: AsyncSession, experience_id: int, payload: 
 async def delete_experience(session: AsyncSession, experience_id: int) -> None:
     await session.execute(delete(models.Experience).where(models.Experience.id == experience_id))
     await session.commit()
+
+
+async def list_education(session: AsyncSession) -> list[dict]:
+    educations = (
+        await session.execute(select(models.Education).order_by(models.Education.display_order))
+    ).scalars().all()
+    result = []
+    for education in educations:
+        result.append(
+            {
+                "id": education.id,
+                "institution": education.institution,
+                "start_date": education.start_date,
+                "end_date": education.end_date,
+                "location": education.location,
+                "display_order": education.display_order,
+                "translations": [
+                    {
+                        "lang": translation.lang,
+                        "degree": translation.degree,
+                        "field_of_study": translation.field_of_study,
+                        "description": translation.description,
+                    }
+                    for translation in education.translations
+                ],
+            }
+        )
+    return result
 
 
 async def create_education(session: AsyncSession, payload: EducationPayload) -> dict:
@@ -196,6 +252,32 @@ async def delete_education(session: AsyncSession, education_id: int) -> None:
     await session.commit()
 
 
+async def list_courses(session: AsyncSession) -> list[dict]:
+    courses = (
+        await session.execute(select(models.Course).order_by(models.Course.display_order))
+    ).scalars().all()
+    result = []
+    for course in courses:
+        result.append(
+            {
+                "id": course.id,
+                "provider": course.provider,
+                "completion_date": course.completion_date,
+                "credential_url": course.credential_url,
+                "display_order": course.display_order,
+                "translations": [
+                    {
+                        "lang": translation.lang,
+                        "title": translation.title,
+                        "description": translation.description,
+                    }
+                    for translation in course.translations
+                ],
+            }
+        )
+    return result
+
+
 async def create_course(session: AsyncSession, payload: CoursePayload) -> dict:
     course = models.Course(**payload.model_dump(exclude_none=True, exclude={"translations"}))
     if payload.translations:
@@ -224,6 +306,32 @@ async def delete_course(session: AsyncSession, course_id: int) -> None:
     await session.commit()
 
 
+async def list_certificates(session: AsyncSession) -> list[dict]:
+    certificates = (
+        await session.execute(select(models.Certificate).order_by(models.Certificate.display_order))
+    ).scalars().all()
+    result = []
+    for certificate in certificates:
+        result.append(
+            {
+                "id": certificate.id,
+                "issuer": certificate.issuer,
+                "issue_date": certificate.issue_date,
+                "credential_url": certificate.credential_url,
+                "display_order": certificate.display_order,
+                "translations": [
+                    {
+                        "lang": translation.lang,
+                        "title": translation.title,
+                        "description": translation.description,
+                    }
+                    for translation in certificate.translations
+                ],
+            }
+        )
+    return result
+
+
 async def create_certificate(session: AsyncSession, payload: CertificatePayload) -> dict:
     certificate = models.Certificate(**payload.model_dump(exclude_none=True, exclude={"translations"}))
     if payload.translations:
@@ -250,6 +358,38 @@ async def update_certificate(session: AsyncSession, certificate_id: int, payload
 async def delete_certificate(session: AsyncSession, certificate_id: int) -> None:
     await session.execute(delete(models.Certificate).where(models.Certificate.id == certificate_id))
     await session.commit()
+
+
+async def list_projects(session: AsyncSession) -> list[dict]:
+    projects = (
+        await session.execute(select(models.Project).order_by(models.Project.display_order))
+    ).scalars().all()
+    result = []
+    for project in projects:
+        result.append(
+            {
+                "id": project.id,
+                "start_date": project.start_date,
+                "end_date": project.end_date,
+                "live_url": project.live_url,
+                "github_url": project.github_url,
+                "tech_stack": project.tech_stack,
+                "featured": project.featured,
+                "display_order": project.display_order,
+                "skill_ids": [link.skill_id for link in project.skills],
+                "translations": [
+                    {
+                        "lang": translation.lang,
+                        "title": translation.title,
+                        "description": translation.description,
+                        "role": translation.role,
+                        "impact": translation.impact,
+                    }
+                    for translation in project.translations
+                ],
+            }
+        )
+    return result
 
 
 async def create_project(session: AsyncSession, payload: ProjectPayload) -> dict:
@@ -283,6 +423,22 @@ async def delete_project(session: AsyncSession, project_id: int) -> None:
     await session.commit()
 
 
+async def list_social_links(session: AsyncSession) -> list[dict]:
+    links = (
+        await session.execute(select(models.SocialLink).order_by(models.SocialLink.display_order))
+    ).scalars().all()
+    return [
+        {
+            "id": link.id,
+            "platform": link.platform,
+            "url": link.url,
+            "display_order": link.display_order,
+            "is_visible": link.is_visible,
+        }
+        for link in links
+    ]
+
+
 async def create_social_link(session: AsyncSession, payload: SocialLinkPayload) -> dict:
     link = models.SocialLink(**payload.model_dump(exclude_none=True))
     session.add(link)
@@ -305,6 +461,29 @@ async def update_social_link(session: AsyncSession, social_link_id: int, payload
 async def delete_social_link(session: AsyncSession, social_link_id: int) -> None:
     await session.execute(delete(models.SocialLink).where(models.SocialLink.id == social_link_id))
     await session.commit()
+
+
+async def list_ai_knowledge_entries(session: AsyncSession) -> list[dict]:
+    entries = (
+        await session.execute(select(models.AIKnowledgeEntry).order_by(models.AIKnowledgeEntry.display_order))
+    ).scalars().all()
+    result = []
+    for entry in entries:
+        result.append(
+            {
+                "id": entry.id,
+                "display_order": entry.display_order,
+                "translations": [
+                    {
+                        "lang": translation.lang,
+                        "title": translation.title,
+                        "content": translation.content,
+                    }
+                    for translation in entry.translations
+                ],
+            }
+        )
+    return result
 
 
 async def create_ai_knowledge_entry(session: AsyncSession, payload: AIKnowledgeEntryPayload) -> dict:

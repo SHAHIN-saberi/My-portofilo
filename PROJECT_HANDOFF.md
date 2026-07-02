@@ -116,21 +116,21 @@
   - `/api/v1/courses`: implemented.
   - `/api/v1/certificates`: implemented.
   - `/api/v1/social-links`: implemented.
-- Admin API (`backend/app/api/admin.py`): mostly implemented.
+- Admin API (`backend/app/api/admin.py`): fully implemented.
   - `/api/v1/admin/login`: implemented.
   - `/api/v1/admin/me`: implemented.
   - `/api/v1/admin/profile` GET and PUT: implemented.
   - `/api/v1/admin/skills` GET/POST/PUT/DELETE: implemented.
-  - `/api/v1/admin/experiences` POST/PUT/DELETE: implemented; list endpoint missing.
-  - `/api/v1/admin/education` POST/PUT/DELETE: implemented; list endpoint missing.
-  - `/api/v1/admin/courses` POST/PUT/DELETE: implemented; list endpoint missing.
-  - `/api/v1/admin/certificates` POST/PUT/DELETE: implemented; list endpoint missing.
-  - `/api/v1/admin/projects` POST/PUT/DELETE: implemented; list endpoint missing.
-  - `/api/v1/admin/social-links` POST/PUT/DELETE: implemented; list endpoint missing.
-  - `/api/v1/admin/ai-knowledge` POST/PUT/DELETE: implemented; list endpoint missing.
+  - `/api/v1/admin/experiences` GET/POST/PUT/DELETE: implemented.
+  - `/api/v1/admin/education` GET/POST/PUT/DELETE: implemented.
+  - `/api/v1/admin/courses` GET/POST/PUT/DELETE: implemented.
+  - `/api/v1/admin/certificates` GET/POST/PUT/DELETE: implemented.
+  - `/api/v1/admin/projects` GET/POST/PUT/DELETE: implemented.
+  - `/api/v1/admin/social-links` GET/POST/PUT/DELETE: implemented.
+  - `/api/v1/admin/ai-knowledge` GET/POST/PUT/DELETE: implemented.
   - `/api/v1/admin/reindex`: implemented.
   - `/api/v1/admin/knowledge-status`: implemented.
-- Chatbot API (`backend/app/api/chatbot.py`): endpoint exists but returns static placeholder; chatbot logic is not wired.
+- Chatbot API (`backend/app/api/chatbot.py`): implemented. `/api/v1/chatbot/query` is wired to `services/rag.build_question_answer`, returning `answered` / `unrelated` / `no_answer` / `error` status with the spec-locked fallback copy for each non-answered case.
 
 ## 7. Backend Status
 
@@ -141,23 +141,23 @@ Completed:
 - Content retrieval services with translation selection.
 - Admin CRUD service implementations for create/update/delete.
 - Provider abstraction and DeepSeek integration.
-- RAG helper methods: embedding query, retrieval, reranking, context assembly, answer generation skeleton, citation formatting.
+- RAG helper methods: embedding query, retrieval, reranking, context assembly, answer generation, citation formatting.
+- Chatbot endpoint fully wired to the RAG decision flow: LLM-based professional scope filter (`classify_scope`), cosine-similarity relevance gate (`passes_similarity_gate`, using `rag_similarity_threshold`), retrieval, rerank, context assembly, generation with an owner-name-aware system prompt, and citation formatting. Spec-locked fallback copy is returned for `unrelated` and `no_answer` statuses; unexpected failures return an `error` status instead of a 500.
 - Reindex pipeline with source gathering and chunk creation.
-- Basic backend tests for model metadata and schema presence.
+- Basic backend tests for model metadata and schema presence, plus unit tests for scope classification, the similarity gate, and admin list-endpoint route wiring/auth enforcement.
+- Full admin CRUD coverage: list endpoints added for experiences, education, courses, certificates, projects, social-links, and ai-knowledge (all return every stored translation per item, matching the existing `list_skills` convention, unlike public endpoints which resolve a single language).
 
 Partially completed:
-- Admin CRUD coverage lacks listing endpoints for many domains.
-- Chatbot integration is present in service code but not exposed through the endpoint.
-- RAG is only partially implemented; BM25 and RRF are absent.
+- RAG is only partially implemented; BM25, RRF, and a Query Planner stage are absent (pgvector-only retrieval).
 - Database model vs migration inconsistency exists for `courses`.
 - Admin auth model/table exists but is unused by current auth flow.
+- Chatbot flow and the new admin list endpoints are validated by provider-independent/route-wiring unit tests and an app-boot smoke test only; no live Postgres+pgvector/DeepSeek integration test has been run yet.
 
 Missing:
-- Actual chatbot response flow and API integration.
-- Full admin listing endpoints and complete CRUD admin panel support.
-- Backend tests for auth, admin services, RAG, and reindex pipeline behavior.
+- Backend tests for admin auth and create/update/delete service logic (only list endpoints and route wiring are tested so far).
 - Frontend application implementation.
-- Complete hybrid retrieval pipeline features (BM25, RRF fusion, scope/rerank tuning).
+- Complete hybrid retrieval pipeline features (BM25, RRF fusion, Query Planner/Rewrite stage, explicit stop conditions).
+- Live integration test of chatbot + admin CRUD against a running Postgres+pgvector instance and real/mocked DeepSeek responses.
 
 ## 8. Frontend Status
 
@@ -171,14 +171,16 @@ Missing:
 ## 9. RAG Status
 
 - Planner: missing as a separate planner component; retrieval helper exists.
-- Scope Filter: partial. `context_relevance_filter` is implemented as a simple keyword presence check, not a full professional scope filter.
+- Scope Filter: implemented via `classify_scope()` — an LLM YES/NO classification gate on whether the question concerns the owner's professional profile. Fails open (treated as in-scope) on provider error, since the similarity gate and generation prompt still guard against hallucination.
+- Relevance Gate: implemented via `passes_similarity_gate()` — converts pgvector cosine *distance* to similarity and compares against `settings.rag_similarity_threshold` (default 0.65, per spec).
 - Hybrid Retrieval: partial. pgvector-based retrieval exists, but no BM25 or actual multimodal fusion.
 - pgvector: implemented and indexed.
 - BM25: missing.
 - RRF: missing.
 - Reranker: partial. `rerank_sources` uses AIProvider chat ranking but is not yet validated with a real endpoint.
 - Context Builder: implemented via `assemble_context`.
-- Citation Validation: partial. citations are formatted, but real answer-source validation is not fully enforced.
+- Citation Validation: partial. citations are formatted per retrieved source, but real answer-source validation (checking the generated answer actually cites/matches the sources) is not enforced.
+- Chatbot wiring: `build_question_answer()` now implements the full locked decision flow (scope filter -> embed -> retrieve -> similarity gate -> rerank -> context -> generate -> citations) and is called directly from `POST /api/v1/chatbot/query`.
 - Reindex Pipeline: implemented in `backend/app/services/reindex.py` and exposed via admin route.
 - Embedding Pipeline: implemented through DeepSeek provider `embed_batch` and chunk creation.
 
@@ -191,40 +193,36 @@ Missing:
 
 ## 11. Remaining Work
 
-1. Wire chatbot endpoint to RAG answer flow.
-   - files: `backend/app/api/chatbot.py`, `backend/app/services/rag.py`.
-   - dependency: existing RAG and AI provider services.
-2. Add missing admin list endpoints and verify admin CRUD coverage.
-   - files: `backend/app/api/admin.py`, `backend/app/services/admin_service.py`.
-3. Fix database schema mismatch for `Course` model vs Alembic migration.
+1. Fix database schema mismatch for `Course` model vs Alembic migration.
    - files: `backend/app/db/models.py`, `backend/alembic/versions/0001_initial.py`.
-4. Resolve admin auth implementation vs `AdminUser` table inconsistency.
+2. Resolve admin auth implementation vs `AdminUser` table inconsistency.
    - files: `backend/app/db/models.py`, `backend/app/core/security.py`, `backend/app/api/admin.py`.
-5. Implement BM25 and RRF fusion in retrieval pipeline.
+3. Implement the remaining locked RAG pipeline stages: Query Planner/Query Rewrite, BM25 lexical retrieval, RRF fusion of pgvector + BM25 results, and explicit stop conditions.
    - files: `backend/app/services/rag.py`, `backend/app/services/reindex.py`.
-6. Expand RAG reliability: proper scope filtering, citation validation, and answer gating.
+4. Expand RAG reliability: real answer-source citation validation (current `validate_citations` just formats source refs, it doesn't check the answer actually used them).
    - files: `backend/app/services/rag.py`.
-7. Add backend tests for admin auth, service logic, and chatbot flow.
+5. Add backend tests for admin auth and create/update/delete service logic, plus a live-DB integration test for chatbot and admin CRUD (current tests cover scope/similarity logic, admin list route wiring/auth, and metadata only — not real database reads/writes).
    - files: `backend/tests/*.py`.
-8. Implement frontend application source and connect to backend.
+6. Implement frontend application source and connect to backend.
    - files: `frontend/`.
 
 ## 12. Known Issues
 
-- `backend/app/api/chatbot.py` is a placeholder and does not return RAG-generated answers.
+- Chatbot flow has not been exercised against a live Postgres+pgvector instance or the real DeepSeek API in this environment (no credentials/DB available here); validated via unit tests + app-boot smoke test only.
+- `ChatSource`/citations are only meaningful for `status: answered`; the endpoint always omits `sources` for `unrelated`/`no_answer`/`error`, but there is no separate admin-only debug flag yet to distinguish visitor vs. admin views per spec section 10.
 - `AdminUser` table exists but current admin auth is environment-based and does not use the DB table.
 - `Course` model fields differ from the Alembic migration schema.
-- Admin router exposes CRUD for many domains but only lists skills; listing endpoints for experiences, education, courses, certificates, projects, social-links, and ai-knowledge are missing.
+- New admin list endpoints (experiences, education, courses, certificates, projects, social-links, ai-knowledge) are validated by route-wiring/auth tests only, not against a live database — their query/serialization logic (mirrors the existing, working `list_skills`) has not been run against real rows.
 - The frontend directory contains only a `Dockerfile`; no functional frontend code is available.
 - RAG features like BM25, RRF, and professional scope fusion are not implemented.
 
 ## 13. Suggested Continuation Order
 
-1. Complete backend chatbot wiring first, because backend functionality is the core package goal.
-2. Close admin CRUD coverage and add missing list endpoints, then verify admin API consistency.
+1. ~~Complete backend chatbot wiring first, because backend functionality is the core package goal.~~ Done.
+2. ~~Close admin CRUD coverage and add missing list endpoints, then verify admin API consistency.~~ Done.
 3. Fix DB migration/model mismatches and confirm schema integrity.
-4. Implement missing RAG retrieval features (BM25, RRF fusion, refined scope filter).
-5. Add backend tests for auth, admin services, reindex, and chatbot.
+4. Implement missing RAG retrieval features (Query Planner, BM25, RRF fusion, stop conditions) per the locked pipeline in `NEXT_AGENT.md`.
+5. Add backend tests for auth, admin CRUD service logic, reindex, and a live-DB chatbot integration test.
 6. Implement frontend application and connect it to the existing backend API.
 
 ## 14. Files Modified During This Project
@@ -249,15 +247,17 @@ Missing:
 - `backend/app/services/rag.py`
 - `backend/app/services/reindex.py`
 - `backend/alembic/versions/0001_initial.py`
+- `backend/tests/test_chatbot_rag.py`
+- `backend/tests/test_admin_list_endpoints.py`
 - `docker-compose.yml`
 - `nginx/nginx.conf`
 - `.env.example`
 
 ## 15. Final Repository Health
 
-- Backend: 45%
+- Backend: 55%
 - Frontend: 5%
 - Database: 70%
 - RAG: 40%
 - Infrastructure: 70%
-- Overall Completion: 35%
+- Overall Completion: 41%
