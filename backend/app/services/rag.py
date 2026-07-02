@@ -169,9 +169,10 @@ async def build_question_answer(
     top_k: int,
     similarity_threshold: float,
 ) -> dict[str, Any]:
-    """Full decision flow: scope filter -> retrieval -> relevance gate ->
-    rerank -> context -> generation -> citation validation, with the fallback
-    behavior locked in spec section 10 (Chatbot)."""
+    """Full decision flow: scope filter -> query planner/rewrite -> retrieval
+    -> relevance gate -> rerank -> context -> generation -> citation
+    validation, with the fallback behavior locked in spec section 10
+    (Chatbot)."""
     owner_name = await get_owner_name(session)
 
     try:
@@ -187,8 +188,11 @@ async def build_question_answer(
             "citations": [],
         }
 
+    plan = await plan_query(ai_provider, question, owner_name)
+    retrieval_query = plan["rewritten_query"]
+
     try:
-        embedding = await embed_query(question, ai_provider)
+        embedding = await embed_query(retrieval_query, ai_provider)
     except AIProviderError:
         return {
             "answer": FALLBACK_ERROR,
@@ -207,7 +211,7 @@ async def build_question_answer(
             "citations": [],
         }
 
-    reranked = await rerank_sources(ai_provider, question, sources)
+    reranked = await rerank_sources(ai_provider, retrieval_query, sources)
     context = await assemble_context(reranked[:top_k])
     result = await generate_chat_response(ai_provider, question, context, owner_name, reranked[:top_k])
 
@@ -276,6 +280,49 @@ async def classify_scope(
     if "NO" in normalized and "YES" not in normalized:
         return False
     return True
+
+
+async def plan_query(
+    ai_provider: AIProvider,
+    question: str,
+    owner_name: str,
+) -> dict[str, str]:
+    """Query Planner + Query Rewrite stage.
+
+    Runs after the scope filter and before hybrid retrieval, per the locked
+    pipeline order in NEXT_AGENT.md (Scope Filter -> Query Planner -> Query
+    Rewrite -> Hybrid Retrieval). Produces a single, retrieval-optimized
+    rewrite of the user's raw question -- resolving pronouns, expanding
+    abbreviations, dropping filler words/greetings -- so downstream
+    pgvector/BM25 retrieval matches against cleaner search text.
+
+    Only the rewritten query is used for embedding/retrieval/rerank; the
+    original question is still what gets shown to the generation step and
+    answered in the user's own words. Fails open (rewritten == original) on
+    provider error, since retrieval against the raw question still works.
+    """
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a query rewriting assistant for a retrieval system grounded "
+                f"in {owner_name}'s professional profile. Rewrite the user's question "
+                "into a single, self-contained search query optimized for retrieval: "
+                "resolve pronouns, expand abbreviations, drop filler words and "
+                "greetings, and keep it factual and concise. Respond with EXACTLY one "
+                "line containing only the rewritten query -- no quotes, no commentary."
+            ),
+        },
+        {"role": "user", "content": question},
+    ]
+    try:
+        reply = await ai_provider.chat(messages)
+    except AIProviderError:
+        return {"rewritten_query": question, "original_query": question}
+
+    first_line = reply.strip().splitlines()[0].strip().strip('"') if reply.strip() else ""
+    rewritten_query = first_line or question
+    return {"rewritten_query": rewritten_query, "original_query": question}
 
 
 def passes_similarity_gate(sources: list[RetrievalSource], threshold: float) -> bool:

@@ -15,6 +15,7 @@ from app.services.rag import (
     RetrievalSource,
     classify_scope,
     passes_similarity_gate,
+    plan_query,
 )
 
 
@@ -87,3 +88,29 @@ def test_similarity_gate_fails_on_no_sources():
 def test_fallback_messages_format_owner_name():
     assert "Shahin" in FALLBACK_UNRELATED.format(name="Shahin")
     assert "Shahin" in FALLBACK_NO_ANSWER.format(name="Shahin")
+
+
+def test_plan_query_returns_rewritten_query():
+    provider = FakeAIProvider(chat_reply="Shahin's Python and FastAPI experience")
+    result = asyncio.run(plan_query(provider, "what about his python skills?", "Shahin"))
+    assert result["original_query"] == "what about his python skills?"
+    assert result["rewritten_query"] == "Shahin's Python and FastAPI experience"
+
+
+def test_plan_query_uses_only_first_line_of_reply():
+    provider = FakeAIProvider(chat_reply="Shahin's Python experience\nextra commentary line")
+    result = asyncio.run(plan_query(provider, "python skills?", "Shahin"))
+    assert result["rewritten_query"] == "Shahin's Python experience"
+
+
+def test_plan_query_falls_back_to_original_on_empty_reply():
+    provider = FakeAIProvider(chat_reply="")
+    result = asyncio.run(plan_query(provider, "python skills?", "Shahin"))
+    assert result["rewritten_query"] == "python skills?"
+
+
+def test_plan_query_fails_open_on_provider_error():
+    provider = FakeAIProvider(raise_error=True)
+    result = asyncio.run(plan_query(provider, "python skills?", "Shahin"))
+    assert result["rewritten_query"] == "python skills?"
+    assert result["original_query"] == "python skills?"

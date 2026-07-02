@@ -115,13 +115,10 @@ def upgrade() -> None:
     op.create_table(
         "courses",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("provider", sa.String(length=256), nullable=False),
-        sa.Column("title", sa.String(length=256), nullable=False),
-        sa.Column("url", sa.String(length=512), nullable=True),
-        sa.Column("start_date", sa.String(length=32), nullable=True),
-        sa.Column("end_date", sa.String(length=32), nullable=True),
-        sa.Column("order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
+        sa.Column("provider", sa.String(length=256), nullable=True),
+        sa.Column("completion_date", sa.String(length=32), nullable=True),
+        sa.Column("credential_url", sa.String(length=512), nullable=True),
+        sa.Column("display_order", sa.Integer(), nullable=False, server_default="0"),
     )
 
     op.create_table(
