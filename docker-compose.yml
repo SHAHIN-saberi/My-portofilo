@@ -19,7 +19,7 @@ services:
       retries: 5
     # Exposed only for local dev/debug; nginx does not need it public in prod.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   backend:
     build: ./backend
@@ -29,7 +29,9 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build: ./frontend
@@ -39,7 +41,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
   nginx:
     image: nginx:1.27-alpine

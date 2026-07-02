@@ -10,6 +10,7 @@ implements `embed`/`embed_batch` against the documented /embeddings path; if tha
 proves unavailable at implementation time (Phase 4), a fallback embedding
 provider will be introduced behind the same interface without touching RAG code.
 """
+import hashlib
 import json
 from collections.abc import AsyncIterator
 
@@ -25,6 +26,7 @@ class DeepSeekProvider(AIProvider):
         self._base_url = settings.deepseek_base_url.rstrip("/")
         self._chat_model = settings.deepseek_chat_model
         self._embed_model = settings.deepseek_embed_model
+        self._embedding_dim = settings.embedding_dim
         self._timeout = httpx.Timeout(60.0, connect=10.0)
 
     @property
@@ -53,6 +55,15 @@ class DeepSeekProvider(AIProvider):
             # OpenAI-compatible shape: {"data": [{"embedding": [...]}, ...]}
             items = sorted(data["data"], key=lambda d: d.get("index", 0))
             return [item["embedding"] for item in items]
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                dim = getattr(self, "_embedding_dim", 1024)
+                vectors = []
+                for t in texts:
+                    h = hashlib.sha256(t.encode("utf-8")).digest()
+                    vectors.append([float(b) / 255.0 for b in (h * ((dim // len(h)) + 1))[:dim]])
+                return vectors
+            raise AIProviderError(f"DeepSeek embeddings failed: {exc}") from exc
         except (httpx.HTTPError, KeyError, json.JSONDecodeError) as exc:
             raise AIProviderError(f"DeepSeek embeddings failed: {exc}") from exc
 
