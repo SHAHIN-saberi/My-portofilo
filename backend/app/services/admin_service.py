@@ -1,5 +1,6 @@
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db import models
 from app.schemas.content import (
@@ -16,11 +17,29 @@ from app.schemas.content import (
 
 
 def _populate_translations(parent, translation_cls, payloads):
-    translations = []
+    """
+    Merge/update translations per-language instead of replacing all.
+    
+    This prevents data loss when doing partial updates (e.g., updating only
+    the Persian translation should not delete the English translation).
+    """
+    # Build a map of existing translations by lang
+    existing_map = {t.lang: t for t in parent.translations}
+    
+    # Process each payload
     for payload in payloads:
         data = payload.model_dump(exclude_none=True)
-        translations.append(translation_cls(**data))
-    parent.translations = translations
+        lang = data.get('lang')
+        
+        if lang in existing_map:
+            # Update existing translation
+            existing = existing_map[lang]
+            for key, value in data.items():
+                if key != 'lang':  # Don't change the lang
+                    setattr(existing, key, value)
+        else:
+            # Create new translation
+            parent.translations.append(translation_cls(**data))
 
 
 async def _set_project_skills(session: AsyncSession, project: models.Project, skill_ids: list[int] | None) -> None:
@@ -88,8 +107,14 @@ async def update_profile(session: AsyncSession, payload: ProfilePayload) -> dict
     return await get_profile(session, payload.translations[0].lang if payload.translations else "en")
 
 
-async def list_skills(session: AsyncSession) -> list[dict]:
-    skills = (await session.execute(select(models.Skill).order_by(models.Skill.display_order))).scalars().all()
+async def list_skills(session: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
+    skills = (await session.execute(
+        select(models.Skill)
+        .options(selectinload(models.Skill.translations))
+        .order_by(models.Skill.display_order)
+        .limit(limit)
+        .offset(offset)
+    )).scalars().all()
     result = []
     for skill in skills:
         result.append(
@@ -140,9 +165,15 @@ async def delete_skill(session: AsyncSession, skill_id: int) -> None:
     await session.commit()
 
 
-async def list_experiences(session: AsyncSession) -> list[dict]:
+async def list_experiences(session: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
     experiences = (
-        await session.execute(select(models.Experience).order_by(models.Experience.display_order))
+        await session.execute(
+            select(models.Experience)
+            .options(selectinload(models.Experience.translations))
+            .order_by(models.Experience.display_order)
+            .limit(limit)
+            .offset(offset)
+        )
     ).scalars().all()
     result = []
     for experience in experiences:
@@ -196,9 +227,15 @@ async def delete_experience(session: AsyncSession, experience_id: int) -> None:
     await session.commit()
 
 
-async def list_education(session: AsyncSession) -> list[dict]:
+async def list_education(session: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
     educations = (
-        await session.execute(select(models.Education).order_by(models.Education.display_order))
+        await session.execute(
+            select(models.Education)
+            .options(selectinload(models.Education.translations))
+            .order_by(models.Education.display_order)
+            .limit(limit)
+            .offset(offset)
+        )
     ).scalars().all()
     result = []
     for education in educations:
@@ -252,9 +289,15 @@ async def delete_education(session: AsyncSession, education_id: int) -> None:
     await session.commit()
 
 
-async def list_courses(session: AsyncSession) -> list[dict]:
+async def list_courses(session: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
     courses = (
-        await session.execute(select(models.Course).order_by(models.Course.display_order))
+        await session.execute(
+            select(models.Course)
+            .options(selectinload(models.Course.translations))
+            .order_by(models.Course.display_order)
+            .limit(limit)
+            .offset(offset)
+        )
     ).scalars().all()
     result = []
     for course in courses:
@@ -306,9 +349,15 @@ async def delete_course(session: AsyncSession, course_id: int) -> None:
     await session.commit()
 
 
-async def list_certificates(session: AsyncSession) -> list[dict]:
+async def list_certificates(session: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
     certificates = (
-        await session.execute(select(models.Certificate).order_by(models.Certificate.display_order))
+        await session.execute(
+            select(models.Certificate)
+            .options(selectinload(models.Certificate.translations))
+            .order_by(models.Certificate.display_order)
+            .limit(limit)
+            .offset(offset)
+        )
     ).scalars().all()
     result = []
     for certificate in certificates:
@@ -360,9 +409,18 @@ async def delete_certificate(session: AsyncSession, certificate_id: int) -> None
     await session.commit()
 
 
-async def list_projects(session: AsyncSession) -> list[dict]:
+async def list_projects(session: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
     projects = (
-        await session.execute(select(models.Project).order_by(models.Project.display_order))
+        await session.execute(
+            select(models.Project)
+            .options(
+                selectinload(models.Project.translations),
+                selectinload(models.Project.skills),
+            )
+            .order_by(models.Project.display_order)
+            .limit(limit)
+            .offset(offset)
+        )
     ).scalars().all()
     result = []
     for project in projects:
@@ -424,9 +482,14 @@ async def delete_project(session: AsyncSession, project_id: int) -> None:
     await session.commit()
 
 
-async def list_social_links(session: AsyncSession) -> list[dict]:
+async def list_social_links(session: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
     links = (
-        await session.execute(select(models.SocialLink).order_by(models.SocialLink.display_order))
+        await session.execute(
+            select(models.SocialLink)
+            .order_by(models.SocialLink.display_order)
+            .limit(limit)
+            .offset(offset)
+        )
     ).scalars().all()
     return [
         {
@@ -464,9 +527,15 @@ async def delete_social_link(session: AsyncSession, social_link_id: int) -> None
     await session.commit()
 
 
-async def list_ai_knowledge_entries(session: AsyncSession) -> list[dict]:
+async def list_ai_knowledge_entries(session: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
     entries = (
-        await session.execute(select(models.AIKnowledgeEntry).order_by(models.AIKnowledgeEntry.display_order))
+        await session.execute(
+            select(models.AIKnowledgeEntry)
+            .options(selectinload(models.AIKnowledgeEntry.translations))
+            .order_by(models.AIKnowledgeEntry.display_order)
+            .limit(limit)
+            .offset(offset)
+        )
     ).scalars().all()
     result = []
     for entry in entries:

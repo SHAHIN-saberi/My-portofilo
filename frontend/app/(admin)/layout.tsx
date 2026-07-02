@@ -15,8 +15,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return;
     }
 
-    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
-    if (!token) {
+    const isLoggedIn = typeof window !== "undefined" ? localStorage.getItem("admin_logged_in") === "true" : false;
+    if (!isLoggedIn) {
       router.push("/adshs/login");
     } else {
       setChecking(false);

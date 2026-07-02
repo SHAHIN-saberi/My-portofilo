@@ -1,9 +1,10 @@
 """Admin API implementation for content management and RAG maintenance."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.security import create_access_token, require_admin, verify_password
+from app.core.limiter import limiter
+from app.core.security import create_access_token, require_admin, set_auth_cookie, clear_auth_cookie, verify_password
 from app.db.session import get_db
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.common import Envelope, Message
@@ -62,8 +63,12 @@ router = APIRouter(tags=["admin"])
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def login(
-    payload: LoginRequest, settings: Settings = Depends(get_settings)
+    request: Request,
+    response: Response,
+    payload: LoginRequest, 
+    settings: Settings = Depends(get_settings)
 ) -> TokenResponse:
     email_ok = payload.email.lower() == settings.admin_email.lower()
     password_ok = verify_password(payload.password, settings.admin_password_hash)
@@ -73,10 +78,26 @@ async def login(
             detail="Invalid credentials",
         )
     token = create_access_token(subject=settings.admin_email, settings=settings)
+    
+    # Set HttpOnly Secure cookie
+    set_auth_cookie(
+        response, 
+        token, 
+        max_age_seconds=settings.auth_token_ttl_minutes * 60
+    )
+    
+    # Also return token in response body for backward compatibility
     return TokenResponse(
         access_token=token,
         expires_in_minutes=settings.auth_token_ttl_minutes,
     )
+
+
+@router.post("/logout")
+async def logout(response: Response) -> Message:
+    """Clear the auth cookie to log out the admin user."""
+    clear_auth_cookie(response)
+    return Message(message="Logged out successfully")
 
 
 @router.get("/me", response_model=Envelope)
@@ -104,9 +125,12 @@ async def update_profile_endpoint(
 
 @router.get("/skills", response_model=Envelope)
 async def list_skills_endpoint(
-    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+    admin: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ) -> Envelope:
-    return Envelope(data=await list_skills(session))
+    return Envelope(data=await list_skills(session, limit=limit, offset=offset))
 
 
 @router.post("/skills", response_model=Envelope)
@@ -143,9 +167,12 @@ async def delete_skill_endpoint(
 
 @router.get("/experiences", response_model=Envelope)
 async def list_experiences_endpoint(
-    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+    admin: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ) -> Envelope:
-    return Envelope(data=await list_experiences(session))
+    return Envelope(data=await list_experiences(session, limit=limit, offset=offset))
 
 
 @router.post("/experiences", response_model=Envelope)
@@ -182,9 +209,12 @@ async def delete_experience_endpoint(
 
 @router.get("/education", response_model=Envelope)
 async def list_education_endpoint(
-    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+    admin: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ) -> Envelope:
-    return Envelope(data=await list_education(session))
+    return Envelope(data=await list_education(session, limit=limit, offset=offset))
 
 
 @router.post("/education", response_model=Envelope)
@@ -221,9 +251,12 @@ async def delete_education_endpoint(
 
 @router.get("/courses", response_model=Envelope)
 async def list_courses_endpoint(
-    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+    admin: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ) -> Envelope:
-    return Envelope(data=await list_courses(session))
+    return Envelope(data=await list_courses(session, limit=limit, offset=offset))
 
 
 @router.post("/courses", response_model=Envelope)
@@ -260,9 +293,12 @@ async def delete_course_endpoint(
 
 @router.get("/certificates", response_model=Envelope)
 async def list_certificates_endpoint(
-    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+    admin: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ) -> Envelope:
-    return Envelope(data=await list_certificates(session))
+    return Envelope(data=await list_certificates(session, limit=limit, offset=offset))
 
 
 @router.post("/certificates", response_model=Envelope)
@@ -299,9 +335,12 @@ async def delete_certificate_endpoint(
 
 @router.get("/projects", response_model=Envelope)
 async def list_projects_endpoint(
-    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+    admin: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ) -> Envelope:
-    return Envelope(data=await list_projects(session))
+    return Envelope(data=await list_projects(session, limit=limit, offset=offset))
 
 
 @router.post("/projects", response_model=Envelope)
@@ -338,9 +377,12 @@ async def delete_project_endpoint(
 
 @router.get("/social-links", response_model=Envelope)
 async def list_social_links_endpoint(
-    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+    admin: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ) -> Envelope:
-    return Envelope(data=await list_social_links(session))
+    return Envelope(data=await list_social_links(session, limit=limit, offset=offset))
 
 
 @router.post("/social-links", response_model=Envelope)
@@ -377,9 +419,12 @@ async def delete_social_link_endpoint(
 
 @router.get("/ai-knowledge", response_model=Envelope)
 async def list_ai_knowledge_entries_endpoint(
-    admin: str = Depends(require_admin), session: AsyncSession = Depends(get_db)
+    admin: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_db),
+    limit: int = 100,
+    offset: int = 0,
 ) -> Envelope:
-    return Envelope(data=await list_ai_knowledge_entries(session))
+    return Envelope(data=await list_ai_knowledge_entries(session, limit=limit, offset=offset))
 
 
 @router.post("/ai-knowledge", response_model=Envelope)

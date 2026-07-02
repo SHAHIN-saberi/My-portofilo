@@ -6,6 +6,8 @@ export type UIStateStatus =
   | "empty"
   | "no_answer"
   | "answered"
+  | "unrelated"
+  | "needs_clarification"
   | "unauthorized";
 
 export interface NormalizedError {

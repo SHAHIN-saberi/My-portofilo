@@ -49,7 +49,7 @@ export default function ChatPage() {
         status: statusMap,
         sources: statusMap === "answered" ? res.sources : null,
         rawAnswer: res.answer,
-        onRetryQuery: statusMap === "error" ? queryText : undefined,
+        onRetryQuery: (statusMap === "error" || statusMap === "needs_clarification") ? queryText : undefined,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -107,6 +107,10 @@ export default function ChatPage() {
                 ? "bg-emerald-100 text-emerald-800"
                 : chatStatus === "no_answer"
                 ? "bg-amber-100 text-amber-800"
+                : chatStatus === "unrelated"
+                ? "bg-purple-100 text-purple-800"
+                : chatStatus === "needs_clarification"
+                ? "bg-sky-100 text-sky-800"
                 : chatStatus === "error"
                 ? "bg-red-100 text-red-800"
                 : "bg-slate-200 text-slate-700"
@@ -132,6 +136,10 @@ export default function ChatPage() {
                   ? "bg-red-50 text-red-800 border border-red-200 rounded-bl-none"
                   : msg.status === "no_answer"
                   ? "bg-amber-50 text-amber-900 border border-amber-200 rounded-bl-none"
+                  : msg.status === "unrelated"
+                  ? "bg-purple-50 text-purple-900 border border-purple-200 rounded-bl-none"
+                  : msg.status === "needs_clarification"
+                  ? "bg-sky-50 text-sky-900 border border-sky-200 rounded-bl-none"
                   : "bg-slate-100 text-slate-800 rounded-bl-none"
               }`}
             >
@@ -145,6 +153,10 @@ export default function ChatPage() {
                           ? "bg-emerald-200 text-emerald-900"
                           : msg.status === "no_answer"
                           ? "bg-amber-200 text-amber-900"
+                          : msg.status === "unrelated"
+                          ? "bg-purple-200 text-purple-900"
+                          : msg.status === "needs_clarification"
+                          ? "bg-sky-200 text-sky-900"
                           : "bg-red-200 text-red-900"
                       }`}
                     >
@@ -155,15 +167,19 @@ export default function ChatPage() {
               )}
               <p className="whitespace-pre-line">{msg.text}</p>
 
-              {/* Explicit Retry UI on error state */}
-              {msg.status === "error" && msg.onRetryQuery && (
-                <div className="mt-3 pt-2 border-t border-red-200 flex justify-end">
+              {/* Explicit Retry UI on error or needs_clarification state */}
+              {(msg.status === "error" || msg.status === "needs_clarification") && msg.onRetryQuery && (
+                <div className="mt-3 pt-2 border-t border-slate-200 flex justify-end">
                   <button
                     onClick={() => executeQuery(msg.onRetryQuery!)}
                     disabled={chatStatus === "loading"}
-                    className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold transition shadow-xs"
+                    className={`px-3 py-1 text-white rounded text-xs font-bold transition shadow-xs ${
+                      msg.status === "error"
+                        ? "bg-red-600 hover:bg-red-700"
+                        : "bg-sky-600 hover:bg-sky-700"
+                    }`}
                   >
-                    🔄 Retry Query
+                    🔄 {msg.status === "needs_clarification" ? "Rephrase & Retry" : "Retry Query"}
                   </button>
                 </div>
               )}

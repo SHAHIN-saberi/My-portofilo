@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Index,
+    func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -40,10 +41,10 @@ class Profile(Base):
     website_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     cv_pdf_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
     translations: Mapped[list["ProfileTranslation"]] = relationship(
@@ -79,7 +80,7 @@ class Skill(Base):
     years_experience: Mapped[Decimal | None] = mapped_column(Numeric(4, 1), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
     __table_args__ = (
@@ -125,7 +126,7 @@ class Experience(Base):
     location: Mapped[str | None] = mapped_column(String(128), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
     translations: Mapped[list["ExperienceTranslation"]] = relationship(
@@ -249,7 +250,7 @@ class Project(Base):
     featured: Mapped[bool] = mapped_column(BOOLEAN, nullable=False, default=False)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
     translations: Mapped[list["ProjectTranslation"]] = relationship(
@@ -306,10 +307,10 @@ class AIKnowledgeEntry(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
     translations: Mapped[list["AIKnowledgeTranslation"]] = relationship(
@@ -367,7 +368,7 @@ class KnowledgeChunk(Base):
     search_vector_en: Mapped[str | None] = mapped_column(Text, nullable=True)
     search_vector_fa: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -378,7 +379,7 @@ class AdminUser(Base):
     email: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
 

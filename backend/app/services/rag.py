@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -10,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.db import models
 from app.services.ai_provider.base import AIProvider, AIProviderError
+
+# Structured logger for RAG pipeline
+logger = logging.getLogger("rag")
 
 FALLBACK_UNRELATED = (
     "I'm the AI assistant for {name}'s professional profile. I can only answer "
@@ -282,14 +287,39 @@ def _rrf_fuse(
 
 # ----- Context Assembly -----
 
+# Approximate token budget for context assembly (chars ≈ tokens * 4 for English,
+# conservative estimate). Prevents overflow of LLM context window.
+MAX_CONTEXT_CHARS = 12000  # ~3000 tokens
+
+
 async def assemble_context(sources: list[RetrievalSource]) -> str:
+    """Assemble retrieved sources into a context string for the LLM.
+
+    Uses explicit delimiters around each source to mitigate prompt injection
+    from CMS content. Enforces an approximate token budget to prevent
+    overflow of the LLM context window.
+    """
     if not sources:
         return ""
     segments = []
+    total_chars = 0
     for idx, source in enumerate(sources, start=1):
-        segments.append(
-            f"[{idx}] Source: {source.source_type}#{source.source_id} (lang={source.lang})\n{source.chunk_text.strip()}"
+        chunk_text = source.chunk_text.strip()
+        # Prompt-injection delimiter: wrap each source in explicit tags
+        # so the LLM treats it as data, not instructions.
+        segment = (
+            f"[{idx}] Source: {source.source_type}#{source.source_id} (lang={source.lang})\n"
+            f"<source>\n{chunk_text}\n</source>"
         )
+        # Enforce token budget
+        if total_chars + len(segment) > MAX_CONTEXT_CHARS:
+            logger.info(
+                "assemble_context: token budget reached at source %d/%d (chars=%d)",
+                idx, len(sources), total_chars
+            )
+            break
+        segments.append(segment)
+        total_chars += len(segment)
     return "\n\n".join(segments)
 
 
@@ -405,8 +435,15 @@ async def generate_chat_response(
     context: str,
     owner_name: str,
     sources: list[RetrievalSource],
+    lang: str = "en",
 ) -> tuple[str, list[str]] | None:
     """Returns (answer, citations), or None if the provider call failed."""
+    lang_instruction = ""
+    if lang == "fa":
+        lang_instruction = " You MUST respond in Persian (Farsi)."
+    elif lang == "en":
+        lang_instruction = " You MUST respond in English."
+
     system_prompt = (
         f"You are the AI assistant for {owner_name}'s professional portfolio. "
         "Use the retrieved context below as your primary source of truth. You may "
@@ -416,7 +453,7 @@ async def generate_chat_response(
         "partially answers the question, answer with what is available and clearly "
         "note the limitation, offering to contact the owner for more detail. Be "
         "concise, professional, and friendly, with light controlled humor only "
-        "when appropriate. Never be careless or misleading."
+        f"when appropriate. Never be careless or misleading.{lang_instruction}"
     )
     messages = [
         {"role": "system", "content": system_prompt},
@@ -456,12 +493,19 @@ async def build_question_answer(
     planner scales top_k via BUDGET_MULTIPLIER so targeted questions get a
     leaner budget and complex queries get more context.
     """
+    # Generate correlation ID for structured logging of this query's pipeline.
+    corr_id = uuid.uuid4().hex[:8]
+    logger.info("[%s] RAG pipeline start: lang=%s, top_k=%d, threshold=%.2f, question=%.80s",
+                corr_id, lang, top_k, similarity_threshold, question)
+
     owner_name = await get_owner_name(session)
 
     try:
         in_scope = await classify_scope(ai_provider, question, owner_name)
     except AIProviderError:
         in_scope = True
+
+    logger.info("[%s] scope_filter: in_scope=%s", corr_id, in_scope)
 
     if not in_scope:
         return {
@@ -473,6 +517,8 @@ async def build_question_answer(
 
     plan = await plan_query(ai_provider, question, owner_name)
     retrieval_query = plan["rewritten_query"]
+    logger.info("[%s] plan_query: complexity=%s, needs_clarification=%s, rewritten=%.80s",
+                corr_id, plan.get("complexity"), plan.get("needs_clarification"), retrieval_query)
 
     # ---- Clarification Flow ----
     if plan.get("needs_clarification"):
@@ -491,11 +537,14 @@ async def build_question_answer(
     complexity = plan.get("complexity", "medium")
     multiplier = BUDGET_MULTIPLIER.get(complexity, 1.0)
     effective_top_k = max(2, min(int(top_k * multiplier), top_k * 2))  # 2..2*top_k
+    logger.info("[%s] budget: complexity=%s, multiplier=%.1f, effective_top_k=%d",
+                corr_id, complexity, multiplier, effective_top_k)
 
     # ---- Retrieval ----
     try:
         embedding = await embed_query(retrieval_query, ai_provider)
     except AIProviderError:
+        logger.error("[%s] embed_query failed", corr_id)
         return {
             "answer": FALLBACK_ERROR,
             "status": "error",
@@ -510,9 +559,11 @@ async def build_question_answer(
         lang=lang,
         top_k=effective_top_k,
     )
+    logger.info("[%s] hybrid_retrieve: %d sources returned", corr_id, len(sources))
 
     # ---- Stop Conditions ----
     if not passes_similarity_gate(sources, similarity_threshold):
+        logger.info("[%s] similarity_gate: FAIL → no_answer", corr_id)
         return {
             "answer": FALLBACK_NO_ANSWER.format(name=owner_name),
             "status": "no_answer",
@@ -531,18 +582,24 @@ async def build_question_answer(
         and best.bm25_rank <= STOP_BOTH_RANK
     ):
         # Skip reranking for high-confidence cases — go straight to generation.
+        logger.info("[%s] early_exit: high confidence (rrf=%.4f, v_rank=%d, b_rank=%d)",
+                    corr_id, best.rrf_score, best.vector_rank, best.bm25_rank)
         top_sources = sources[:top_k]
     else:
         # Standard path: rerank first.
+        logger.info("[%s] reranking sources", corr_id)
         reranked = await rerank_sources(ai_provider, retrieval_query, sources)
         top_sources = reranked[:top_k]
 
     context = await assemble_context(top_sources)
+    logger.info("[%s] assemble_context: %d chars, %d sources", corr_id, len(context), len(top_sources))
+
     result = await generate_chat_response(
-        ai_provider, question, context, owner_name, top_sources
+        ai_provider, question, context, owner_name, top_sources, lang=lang
     )
 
     if result is None:
+        logger.error("[%s] generate_chat_response failed", corr_id)
         return {
             "answer": FALLBACK_ERROR,
             "status": "error",
@@ -554,6 +611,7 @@ async def build_question_answer(
 
     # ---- Strict Citation Validation ----
     citation_valid = await validate_answer_citations(ai_provider, answer, top_sources)
+    logger.info("[%s] citation_validation: %s", corr_id, "PASS" if citation_valid else "FAIL")
     if not citation_valid:
         # Answer failed validation — regenerate with a stricter prompt.
         strict_messages = [
@@ -584,6 +642,8 @@ async def build_question_answer(
                 "citations": [],
             }
         citations = await validate_citations(answer, top_sources)
+
+    logger.info("[%s] RAG pipeline complete: status=answered, answer_len=%d", corr_id, len(answer))
 
     return {
         "answer": answer,
@@ -723,14 +783,17 @@ def passes_similarity_gate(sources: list[RetrievalSource], threshold: float) -> 
       - Check that the best RRF score is meaningful (non-trivial presence from
         at least one strong retrieval method).
       - Dynamically scale the threshold: if both vector and BM25 found the top
-        chunk, the bar is lower; if only one method contributed, require stronger
-        evidence from that single method.
+        chunk, the bar is lower (threshold/80); if only one method contributed,
+        require stronger evidence from that single method (threshold/50).
+      - With default threshold=0.65: both_methods gate ≈ 0.008 RRF,
+        single_method gate ≈ 0.013 RRF.
     For raw pgvector results (legacy retrieve_chunks path):
       - Convert cosine distance to similarity and compare against threshold.
 
     No chunks at all fails the gate regardless of path.
     """
     if not sources:
+        logger.info("similarity_gate: FAIL (no sources)")
         return False
 
     best = sources[0]  # Already sorted by RRF score or similarity.
@@ -741,9 +804,23 @@ def passes_similarity_gate(sources: list[RetrievalSource], threshold: float) -> 
         # Dynamic threshold: require stronger evidence when only one method contributed.
         both_methods = (best.vector_rank is not None) and (best.bm25_rank is not None)
         effective_threshold = threshold / 80.0 if both_methods else threshold / 50.0
-        return rrf >= effective_threshold
+        passed = rrf >= effective_threshold
+        logger.info(
+            "similarity_gate: %s (rrf=%.4f, threshold=%.4f, both_methods=%s, "
+            "vector_rank=%s, bm25_rank=%s, num_sources=%d)",
+            "PASS" if passed else "FAIL",
+            rrf, effective_threshold, both_methods,
+            best.vector_rank, best.bm25_rank, len(sources),
+        )
+        return passed
 
     # Legacy pgvector path: rrf_score not set; score is cosine *distance*
     # (0=identical, 1=opposite) so convert to similarity before threshold check.
     best_similarity = 1 - best.score
-    return best_similarity >= threshold
+    passed = best_similarity >= threshold
+    logger.info(
+        "similarity_gate: %s (similarity=%.4f, threshold=%.4f, num_sources=%d)",
+        "PASS" if passed else "FAIL",
+        best_similarity, threshold, len(sources),
+    )
+    return passed

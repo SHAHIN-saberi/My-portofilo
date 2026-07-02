@@ -12,17 +12,34 @@ export const AdminNavbar: React.FC = () => {
     return null;
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem("admin_token");
+  const handleLogout = async () => {
+    // Call backend logout endpoint to clear HttpOnly cookie
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/admin/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Ignore errors, proceed with local cleanup
+    }
+    // Clear UI state flag
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("admin_logged_in");
+    }
     router.push("/adshs/login");
   };
 
   const navLinks = [
     { href: "/adshs/dashboard", label: "Dashboard" },
+    { href: "/adshs/profile", label: "Profile" },
     { href: "/adshs/skills", label: "Skills" },
     { href: "/adshs/projects", label: "Projects" },
     { href: "/adshs/experience", label: "Experience" },
     { href: "/adshs/education", label: "Education" },
+    { href: "/adshs/courses", label: "Courses" },
+    { href: "/adshs/certificates", label: "Certificates" },
+    { href: "/adshs/social-links", label: "Social Links" },
+    { href: "/adshs/ai-knowledge", label: "AI Knowledge" },
   ];
 
   return (

@@ -11,13 +11,20 @@ The execution of data requests across the entire application must follow strictl
 
 ### Standard Public Content Flow
 ```text
-UI Component ──► Service Layer (public.service.ts) ──► API Gateway (api.ts) ──► Adapter Firewall (*.adapter.ts) ──► Backend API (:8000)
-     ▲                                                                                                                   │
-     │                                     [Success: SafeAPIResponse<T>]                                                │
-     └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-     │                                     [Failure / Null: Field-Level Coalescing ONLY]                                 │
-     └──────────────────────────────────── identity.ts (EMERGENCY FALLBACK ONLY) ────────────────────────────────────────┘
+Server Component (page.tsx) ──► serverApi.ts (fetch with ISR revalidate:60) ──► Backend API (:8000)
+     │                                                                                                  │
+     │                            [Server-side: Props passed to Client Component]                       │
+     └──────────────────────────────────────────────────────────────────────────────────────────────────┘
+     │
+     ▼
+Client Component (*Client.tsx) ──► Service Layer (public.service.ts) ──► API Gateway (api.ts) ──► Adapter Firewall (*.adapter.ts) ──► Backend API (:8000)
+     ▲                                                                                                                                   │
+     │                                     [Success: SafeAPIResponse<T>]                                                                │
+     └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+     │                                     [Failure / Null: Field-Level Coalescing ONLY]                                                 │
+     └──────────────────────────────────── identity.ts (EMERGENCY FALLBACK ONLY) ────────────────────────────────────────────────────────┘
 ```
+**Note:** Initial data is fetched server-side (SSR/ISR) for SEO and performance. Client-side re-fetch only occurs on language change or user interaction (e.g., filtering).
 
 ### Interactive RAG Chat Flow
 ```text

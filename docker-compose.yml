@@ -17,9 +17,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # Exposed only for local dev/debug; nginx does not need it public in prod.
-    ports:
-      - "127.0.0.1:5432:5432"
+    # Port NOT exposed - only accessible via internal Docker network
+    # Uncomment below for local dev/debug only:
+    # ports:
+    #   - "127.0.0.1:5432:5432"
 
   backend:
     build: ./backend
@@ -28,31 +29,51 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:8000:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    # Port NOT exposed - only accessible via nginx
+    # Uncomment below for local dev/debug only:
+    # ports:
+    #   - "127.0.0.1:8000:8000"
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     restart: unless-stopped
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     depends_on:
-      - backend
-    ports:
-      - "127.0.0.1:3000:3000"
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    # Port NOT exposed - only accessible via nginx
+    # Uncomment below for local dev/debug only:
+    # ports:
+    #   - "127.0.0.1:3000:3000"
 
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - frontend
-      - backend
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "80:80"
+      # Uncomment for HTTPS:
+      # - "443:443"
 
 volumes:
   pgdata:
