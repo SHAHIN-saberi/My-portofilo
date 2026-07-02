@@ -1,54 +1,82 @@
-"""Public API skeleton (no auth).
+"""Public API implementation backed by database content services."""
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
-Endpoints return empty/placeholder envelopes in Phase 2. Real data access is
-wired up once the Phase 3 schema and Phase 6 content wiring land.
-"""
-from fastapi import APIRouter, Query
-
+from app.db.session import get_db
 from app.schemas.common import Envelope, Lang
+from app.services.content import (
+    get_profile,
+    list_certificates,
+    list_courses,
+    list_education,
+    list_experiences,
+    list_projects,
+    list_skills,
+    list_social_links,
+)
 
 router = APIRouter(tags=["public"])
 
 
 @router.get("/profile", response_model=Envelope)
-async def get_profile(lang: Lang = Query("en")) -> Envelope:
-    return Envelope(data=None, meta={"lang": lang, "phase": "skeleton"})
+async def get_profile_endpoint(
+    lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await get_profile(session, lang), meta={"lang": lang})
 
 
 @router.get("/skills", response_model=Envelope)
 async def list_skills(
-    lang: Lang = Query("en"), category: str | None = Query(None)
+    lang: Lang = Query("en"),
+    category: str | None = Query(None),
+    session: AsyncSession = Depends(get_db),
 ) -> Envelope:
-    return Envelope(data=[], meta={"lang": lang, "category": category})
+    return Envelope(
+        data=await list_skills(session, lang, category),
+        meta={"lang": lang, "category": category},
+    )
 
 
 @router.get("/experiences", response_model=Envelope)
-async def list_experiences(lang: Lang = Query("en")) -> Envelope:
-    return Envelope(data=[], meta={"lang": lang})
+async def list_experiences(
+    lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_experiences(session, lang), meta={"lang": lang})
 
 
 @router.get("/projects", response_model=Envelope)
 async def list_projects(
-    lang: Lang = Query("en"), featured: bool | None = Query(None)
+    lang: Lang = Query("en"),
+    featured: bool | None = Query(None),
+    session: AsyncSession = Depends(get_db),
 ) -> Envelope:
-    return Envelope(data=[], meta={"lang": lang, "featured": featured})
+    return Envelope(
+        data=await list_projects(session, lang, featured),
+        meta={"lang": lang, "featured": featured},
+    )
 
 
 @router.get("/education", response_model=Envelope)
-async def list_education(lang: Lang = Query("en")) -> Envelope:
-    return Envelope(data=[], meta={"lang": lang})
+async def list_education(
+    lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_education(session, lang), meta={"lang": lang})
 
 
 @router.get("/courses", response_model=Envelope)
-async def list_courses(lang: Lang = Query("en")) -> Envelope:
-    return Envelope(data=[], meta={"lang": lang})
+async def list_courses(
+    lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_courses(session, lang), meta={"lang": lang})
 
 
 @router.get("/certificates", response_model=Envelope)
-async def list_certificates(lang: Lang = Query("en")) -> Envelope:
-    return Envelope(data=[], meta={"lang": lang})
+async def list_certificates(
+    lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
+) -> Envelope:
+    return Envelope(data=await list_certificates(session, lang), meta={"lang": lang})
 
 
 @router.get("/social-links", response_model=Envelope)
-async def list_social_links() -> Envelope:
-    return Envelope(data=[])
+async def list_social_links(session: AsyncSession = Depends(get_db)) -> Envelope:
+    return Envelope(data=await list_social_links(session))

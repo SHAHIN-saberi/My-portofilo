@@ -39,7 +39,7 @@ async def _chunk_texts_for_source(
 
 
 async def _gather_sources(session: AsyncSession, lang: str) -> list[dict[str, Any]]:
-    rows = []
+    rows: list[dict[str, Any]] = []
 
     profile = await session.scalar(select(models.Profile).limit(1))
     if profile:
@@ -63,7 +63,172 @@ async def _gather_sources(session: AsyncSession, lang: str) -> list[dict[str, An
                 }
             )
 
-    # The following query implementations should be repeated for each entity domain.
+    skills = (await session.execute(select(models.Skill).order_by(models.Skill.display_order))).scalars().all()
+    for skill in skills:
+        translation = await session.scalar(
+            select(models.SkillTranslation)
+            .where(models.SkillTranslation.skill_id == skill.id)
+            .where(models.SkillTranslation.lang == lang)
+        )
+        translation = translation or await session.scalar(
+            select(models.SkillTranslation)
+            .where(models.SkillTranslation.skill_id == skill.id)
+            .where(models.SkillTranslation.lang == "en")
+        )
+        if translation:
+            rows.append(
+                {
+                    "source_type": "skill",
+                    "source_id": skill.id,
+                    "lang": translation.lang,
+                    "text": f"{translation.name}\n{translation.description or ''}",
+                }
+            )
+
+    experiences = (await session.execute(select(models.Experience).order_by(models.Experience.display_order))).scalars().all()
+    for experience in experiences:
+        translation = await session.scalar(
+            select(models.ExperienceTranslation)
+            .where(models.ExperienceTranslation.experience_id == experience.id)
+            .where(models.ExperienceTranslation.lang == lang)
+        )
+        translation = translation or await session.scalar(
+            select(models.ExperienceTranslation)
+            .where(models.ExperienceTranslation.experience_id == experience.id)
+            .where(models.ExperienceTranslation.lang == "en")
+        )
+        if translation:
+            rows.append(
+                {
+                    "source_type": "experience",
+                    "source_id": experience.id,
+                    "lang": translation.lang,
+                    "text": f"{experience.company or ''}\n{translation.role}\n{translation.description or ''}",
+                }
+            )
+
+    educations = (await session.execute(select(models.Education).order_by(models.Education.display_order))).scalars().all()
+    for education in educations:
+        translation = await session.scalar(
+            select(models.EducationTranslation)
+            .where(models.EducationTranslation.education_id == education.id)
+            .where(models.EducationTranslation.lang == lang)
+        )
+        translation = translation or await session.scalar(
+            select(models.EducationTranslation)
+            .where(models.EducationTranslation.education_id == education.id)
+            .where(models.EducationTranslation.lang == "en")
+        )
+        if translation:
+            rows.append(
+                {
+                    "source_type": "education",
+                    "source_id": education.id,
+                    "lang": translation.lang,
+                    "text": f"{education.institution or ''}\n{translation.degree}\n{translation.field_of_study or ''}\n{translation.description or ''}",
+                }
+            )
+
+    courses = (await session.execute(select(models.Course).order_by(models.Course.display_order))).scalars().all()
+    for course in courses:
+        translation = await session.scalar(
+            select(models.CourseTranslation)
+            .where(models.CourseTranslation.course_id == course.id)
+            .where(models.CourseTranslation.lang == lang)
+        )
+        translation = translation or await session.scalar(
+            select(models.CourseTranslation)
+            .where(models.CourseTranslation.course_id == course.id)
+            .where(models.CourseTranslation.lang == "en")
+        )
+        if translation:
+            rows.append(
+                {
+                    "source_type": "course",
+                    "source_id": course.id,
+                    "lang": translation.lang,
+                    "text": f"{course.provider or ''}\n{translation.title}\n{translation.description or ''}",
+                }
+            )
+
+    certificates = (await session.execute(select(models.Certificate).order_by(models.Certificate.display_order))).scalars().all()
+    for certificate in certificates:
+        translation = await session.scalar(
+            select(models.CertificateTranslation)
+            .where(models.CertificateTranslation.certificate_id == certificate.id)
+            .where(models.CertificateTranslation.lang == lang)
+        )
+        translation = translation or await session.scalar(
+            select(models.CertificateTranslation)
+            .where(models.CertificateTranslation.certificate_id == certificate.id)
+            .where(models.CertificateTranslation.lang == "en")
+        )
+        if translation:
+            rows.append(
+                {
+                    "source_type": "certificate",
+                    "source_id": certificate.id,
+                    "lang": translation.lang,
+                    "text": f"{certificate.issuer or ''}\n{translation.title}\n{translation.description or ''}",
+                }
+            )
+
+    projects = (await session.execute(select(models.Project).order_by(models.Project.display_order))).scalars().all()
+    for project in projects:
+        translation = await session.scalar(
+            select(models.ProjectTranslation)
+            .where(models.ProjectTranslation.project_id == project.id)
+            .where(models.ProjectTranslation.lang == lang)
+        )
+        translation = translation or await session.scalar(
+            select(models.ProjectTranslation)
+            .where(models.ProjectTranslation.project_id == project.id)
+            .where(models.ProjectTranslation.lang == "en")
+        )
+        if translation:
+            tech_text = ", ".join(project.tech_stack or [])
+            rows.append(
+                {
+                    "source_type": "project",
+                    "source_id": project.id,
+                    "lang": translation.lang,
+                    "text": f"{translation.title or ''}\n{translation.description or ''}\n{translation.role or ''}\n{translation.impact or ''}\n{tech_text}",
+                }
+            )
+
+    social_links = (await session.execute(select(models.SocialLink).order_by(models.SocialLink.display_order))).scalars().all()
+    for link in social_links:
+        rows.append(
+            {
+                "source_type": "social_link",
+                "source_id": link.id,
+                "lang": lang,
+                "text": f"{link.platform}: {link.url}",
+            }
+        )
+
+    ai_entries = (await session.execute(select(models.AIKnowledgeEntry).order_by(models.AIKnowledgeEntry.display_order))).scalars().all()
+    for entry in ai_entries:
+        translation = await session.scalar(
+            select(models.AIKnowledgeTranslation)
+            .where(models.AIKnowledgeTranslation.entry_id == entry.id)
+            .where(models.AIKnowledgeTranslation.lang == lang)
+        )
+        translation = translation or await session.scalar(
+            select(models.AIKnowledgeTranslation)
+            .where(models.AIKnowledgeTranslation.entry_id == entry.id)
+            .where(models.AIKnowledgeTranslation.lang == "en")
+        )
+        if translation:
+            rows.append(
+                {
+                    "source_type": "ai_knowledge",
+                    "source_id": entry.id,
+                    "lang": translation.lang,
+                    "text": f"{translation.title or ''}\n{translation.content}",
+                }
+            )
+
     return rows
 
 
