@@ -28,10 +28,15 @@ export function chatAdapter(raw: unknown): ChatStateModel {
   let stateStatus: ChatStatusType = "answered";
   const rawStatus = safeString(rawObj.status, "answered");
 
+  // Handle all 5 backend statuses explicitly
   if (rawStatus === "no_answer") {
     stateStatus = "no_answer";
   } else if (rawStatus === "error") {
     stateStatus = "error";
+  } else if (rawStatus === "unrelated") {
+    stateStatus = "unrelated";
+  } else if (rawStatus === "needs_clarification") {
+    stateStatus = "needs_clarification";
   } else {
     stateStatus = "answered";
   }
@@ -41,6 +46,10 @@ export function chatAdapter(raw: unknown): ChatStateModel {
     answerText = "No relevant answer found in the profile knowledge base.";
   } else if (stateStatus === "error" && !answerText.trim()) {
     answerText = "I'm sorry, I couldn't generate an answer right now.";
+  } else if (stateStatus === "unrelated" && !answerText.trim()) {
+    answerText = "I can only answer questions about my professional background, skills, and projects.";
+  } else if (stateStatus === "needs_clarification" && !answerText.trim()) {
+    answerText = "Could you please provide more details or clarify your question?";
   }
 
   const sourcesRaw = rawObj.sources;

@@ -6,6 +6,8 @@ export type UIState =
   | "empty"
   | "no_answer"
   | "answered"
+  | "unrelated"
+  | "needs_clarification"
   | "unauthorized";
 
 export interface SafeAPIResponse<T> {
@@ -22,7 +24,12 @@ export interface SafeError {
   rawError?: unknown;
 }
 
-export type ChatStatusType = "answered" | "no_answer" | "error";
+export type ChatStatusType = 
+  | "answered" 
+  | "unrelated" 
+  | "no_answer" 
+  | "error" 
+  | "needs_clarification";
 
 export interface SafeChatSource {
   source_type: string;

@@ -1,5 +1,5 @@
 """Chatbot request/response schemas."""
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -21,8 +21,14 @@ class ChatSource(BaseModel):
 
 class ChatQueryResponse(BaseModel):
     answer: str
-    # 'answered' | 'unrelated' | 'no_answer' | 'error' | 'needs_clarification'
-    status: str = "answered"
+    # All 5 statuses that build_question_answer() can return
+    status: Literal[
+        "answered",
+        "unrelated",
+        "no_answer",
+        "error",
+        "needs_clarification"
+    ] = "answered"
     # Populated only for 'answered' responses; frontend should hide this from
     # end users and surface it in admin/debug mode only (spec section 10).
     sources: Optional[list[ChatSource]] = None

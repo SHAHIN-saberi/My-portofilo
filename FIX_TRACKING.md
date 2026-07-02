@@ -8,10 +8,24 @@
 
 ## 🔴 P0 — Critical (Must Fix All)
 
-- [ ] **P0-1**: Remove fake SHA-256 embedding fallback in `deepseek.py:58-66` — fail closed
-  - **Status:** NOT FIXED
-  - **Verification:** Code still generates deterministic fake vectors on 404
-  - **Files:** `backend/app/services/ai_provider/deepseek.py:58-66`
+- [x] **P0-1**: Remove fake SHA-256 embedding fallback in `deepseek.py:58-66` — fail closed
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Removed entire `if exc.response.status_code == 404` block that generated fake SHA-256 vectors
+    - Now always raises `AIProviderError` on any HTTP error (fail-closed)
+    - Removed unused `import hashlib`
+  - **Files:** `backend/app/services/ai_provider/deepseek.py`
+  - **Note:** If the knowledge_chunks index was previously built with fake embeddings, it MUST be reindexed after deployment (manual action for human)
+
+- [x] **P0-4**: Fix `ChatQueryResponse.status` enum + frontend adapter handling
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Backend: Changed `status: str` to `status: Literal["answered","unrelated","no_answer","error","needs_clarification"]` in Pydantic schema
+    - Frontend types: Added `unrelated` and `needs_clarification` to `ChatStatusType` and `UIState`
+    - Frontend adapter: Explicitly handles all 5 statuses (no longer coerces unknown to "answered")
+    - Chat UI: Added distinct colors for `unrelated` (purple) and `needs_clarification` (sky blue)
+    - Chat UI: Added "Rephrase & Retry" button for `needs_clarification` status
+  - **Files:** `backend/app/schemas/chatbot.py`, `frontend/types/safe.ts`, `frontend/types/state.ts`, `frontend/types/index.ts`, `frontend/lib/adapters/chat.adapter.ts`, `frontend/app/chat/page.tsx`
 
 - [ ] **P0-2**: Complete 5 missing admin pages (courses, certificates, social-links, ai-knowledge, profile)
   - **Status:** NOT FIXED

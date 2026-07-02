@@ -10,7 +10,6 @@ implements `embed`/`embed_batch` against the documented /embeddings path; if tha
 proves unavailable at implementation time (Phase 4), a fallback embedding
 provider will be introduced behind the same interface without touching RAG code.
 """
-import hashlib
 import json
 from collections.abc import AsyncIterator
 
@@ -56,14 +55,11 @@ class DeepSeekProvider(AIProvider):
             items = sorted(data["data"], key=lambda d: d.get("index", 0))
             return [item["embedding"] for item in items]
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
-                dim = getattr(self, "_embedding_dim", 1024)
-                vectors = []
-                for t in texts:
-                    h = hashlib.sha256(t.encode("utf-8")).digest()
-                    vectors.append([float(b) / 255.0 for b in (h * ((dim // len(h)) + 1))[:dim]])
-                return vectors
-            raise AIProviderError(f"DeepSeek embeddings failed: {exc}") from exc
+            # Fail closed: never generate fake embeddings, always raise error
+            # This prevents silent corruption of the knowledge_chunks index
+            raise AIProviderError(
+                f"DeepSeek embeddings failed with HTTP {exc.response.status_code}: {exc}"
+            ) from exc
         except (httpx.HTTPError, KeyError, json.JSONDecodeError) as exc:
             raise AIProviderError(f"DeepSeek embeddings failed: {exc}") from exc
 

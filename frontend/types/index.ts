@@ -168,7 +168,7 @@ export interface ChatSource {
 
 export interface ChatQueryResponse {
   answer: string;
-  status: "answered" | "no_answer" | "error" | string;
+  status: "answered" | "unrelated" | "no_answer" | "error" | "needs_clarification";
   sources?: ChatSource[] | null;
 }
 
