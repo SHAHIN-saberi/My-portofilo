@@ -28,7 +28,7 @@ export default function AdminExperiencePage() {
   const [descFa, setDescFa] = useState("");
 
   const fetchExperience = useCallback(async () => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+    const token = typeof window !== "undefined" ? localStorage.getItem("admin_logged_in") === "true" : null;
     if (!token) {
       router.push("/adshs/login");
       return;
@@ -42,7 +42,7 @@ export default function AdminExperiencePage() {
     } catch (err: unknown) {
       const normErr = normalizeError(err);
       if (normErr.status === 401) {
-        localStorage.removeItem("admin_token");
+        localStorage.removeItem("admin_logged_in");
         router.push("/adshs/login");
         return;
       }

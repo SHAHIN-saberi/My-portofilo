@@ -12,8 +12,20 @@ export const AdminNavbar: React.FC = () => {
     return null;
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem("admin_token");
+  const handleLogout = async () => {
+    // Call backend logout endpoint to clear HttpOnly cookie
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/admin/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Ignore errors, proceed with local cleanup
+    }
+    // Clear UI state flag
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("admin_logged_in");
+    }
     router.push("/adshs/login");
   };
 

@@ -1,7 +1,7 @@
 {
   "project": "personal-ai-resume-portfolio",
-  "current_package": "Package 3 - Backend Completion & Schema Fixes",
-  "approved_phase": "3",
+  "current_package": "Production Readiness - Phase 1 (Security Lockdown)",
+  "approved_phase": "Production Readiness (per AGENT_MASTER_PROMPT.md)",
   "completion_percentage": 73,
   "completed": [
     "Phase 0: repo audit + full read of spec.md; produced analysis, phase plan, risk summary",
@@ -51,14 +51,22 @@
     "Backend Completion: implemented rate limiting on chatbot endpoint using slowapi (20/minute per IP) as required by spec; created app/core/limiter.py to avoid circular imports; applied @limiter.limit('20/minute') decorator to POST /api/v1/chatbot/query",
     "Backend Completion: fixed test_phase3_compliance.py path issue (backend/alembic -> alembic)",
     "Backend Completion: installed pytest-asyncio for async test support",
-    "Backend Completion: added 21 new tests in test_admin_crud.py covering all 9 content domains (education, project, skill, experience, course, certificate, social_link, ai_knowledge, profile) and rate limiting tests in test_chatbot_rate_limiting.py (5 tests)"
+    "Backend Completion: added 21 new tests in test_admin_crud.py covering all 9 content domains (education, project, skill, experience, course, certificate, social_link, ai_knowledge, profile) and rate limiting tests in test_chatbot_rate_limiting.py (5 tests)",
+    "Frontend: Next.js App Router with adapter firewall pattern, service layer, bilingual public pages (home, projects, skills, experience, education), chat page, admin CRUD pages for 4/9 domains (skills, projects, experience, education), dual route trees /admin + /adshs (duplication bug - P0-3)",
+    "Production Readiness Phase 0: full repo audit, created FIX_TRACKING.md and docs/STATE_RECONCILIATION.md, reconciled documentation with actual code, fixed test_db_lifecycle.py mock (AsyncMock coroutine issue), baseline 69/69 tests passing"
   ],
   "in_progress": [],
   "remaining_components": [
-    "Live integration test of chatbot + admin CRUD against a running Postgres+pgvector instance and real/mocked DeepSeek responses",
-    "Structured logging in RAG pipeline",
-    "Resolve AdminUser table vs env-based admin auth inconsistency (does not block RAG; deferred)",
-    "Frontend application implementation (blocked until backend complete per current directive)"
+    "P0-1: Remove fake SHA-256 embedding fallback in deepseek.py (fail closed)",
+    "P0-2: Complete 5 missing admin CMS pages (courses, certificates, social-links, ai-knowledge, profile)",
+    "P0-3: Delete duplicate /admin route tree, keep /adshs only",
+    "P0-4: Fix frontend chat adapter to handle all 5 backend statuses (unrelated, needs_clarification)",
+    "P0-5: Security lockdown (JWT secret enforcement, login rate-limit, httpOnly cookie, error leakage, nginx headers)",
+    "P0-6: Convert public pages to Server Components + metadata + sitemap/robots",
+    "P1 backend: N+1 queries, pagination, translation destructive replace bug, JWT sub/jti, datetime.utcnow",
+    "P1 RAG/security: similarity gate logging, error pages, prompt-injection delimiters, CI/CD, Docker hardening",
+    "Live integration test against running Postgres+pgvector and real DeepSeek API",
+    "Deployment (Phase 11) - requires human approval"
   ],
   "created_files": [
     "backend/app/schemas/content.py",
@@ -72,7 +80,9 @@
     "backend/alembic/versions/0003_fix_education_translations.py",
     "backend/app/core/limiter.py",
     "backend/tests/test_admin_crud.py",
-    "backend/tests/test_chatbot_rate_limiting.py"
+    "backend/tests/test_chatbot_rate_limiting.py",
+    "FIX_TRACKING.md",
+    "docs/STATE_RECONCILIATION.md"
   ],
   "modified_files": [
     "backend/app/api/public.py",
@@ -87,16 +97,21 @@
     "backend/app/db/models.py",
     "backend/app/schemas/content.py",
     "backend/tests/test_phase3_compliance.py",
-    "backend/alembic/versions/0001_initial.py"
+    "backend/alembic/versions/0001_initial.py",
+    "backend/tests/test_db_lifecycle.py"
   ],
   "architecture_status": "approved",
   "RAG_status": "complete",
   "backend_status": "complete",
-  "frontend_status": "not started",
+  "frontend_status": "partial",
   "database_status": "fixed",
+  "test_status": "69 passed, 0 failed",
   "known_blockers": [
-    "No live Postgres+pgvector or DeepSeek API credentials available in this environment. All features validated via 63 unit tests covering pure logic functions, route wiring, and admin CRUD service logic. Migrations 0001, 0002, 0003 are ready for deployment. Rate limiting implemented."
+    "6 P0 production blockers identified (see FIX_TRACKING.md)",
+    "No live Postgres+pgvector or DeepSeek API credentials available in this environment",
+    "Frontend admin CMS missing 5/9 content domains",
+    "Security posture is dev-grade (see P0-5 in FIX_TRACKING.md)"
   ],
-  "next_implementation_task": "Backend is production-ready. 63 tests pass covering RAG pipeline, admin CRUD, rate limiting, and schema compliance. Migrations 0001-0003 are ready. Docker compose verified. Next step: live integration test once DB credentials available, then frontend implementation.",
-  "last_updated": "2026-07-01T23:00:00"
+  "next_implementation_task": "Phase 1 - Critical Security Lockdown: AUTH_SECRET enforcement, admin login rate-limit, httpOnly cookie migration, error handler sanitization, nginx security headers",
+  "last_updated": "2026-07-02T00:00:00"
 }

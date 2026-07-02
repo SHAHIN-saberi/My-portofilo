@@ -28,14 +28,8 @@ export async function apiFetch<T = unknown>(endpoint: string, options: ApiFetchO
   const { autoRetry = false, timeoutMs = 30000, headers = {}, ...restOptions } = options;
   const url = `${API_URL}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
 
-  let token: string | null = null;
-  if (typeof window !== "undefined") {
-    token = localStorage.getItem("admin_token");
-  }
-
   const mergedHeaders: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(headers as Record<string, string>),
   };
 
@@ -48,6 +42,7 @@ export async function apiFetch<T = unknown>(endpoint: string, options: ApiFetchO
         ...restOptions,
         headers: mergedHeaders,
         signal: controller.signal,
+        credentials: "include", // Send HttpOnly cookies with request
       });
       return response;
     } finally {

@@ -23,7 +23,11 @@ export default function AdminLoginPage() {
     try {
       const res = await adminLoginService(email, password);
       if (res && res.isValid && res.data?.access_token) {
-        localStorage.setItem("admin_token", res.data.access_token);
+        // Cookie is set by backend (HttpOnly Secure SameSite=Strict)
+        // Set a non-sensitive flag in localStorage for UI state only
+        if (typeof window !== "undefined") {
+          localStorage.setItem("admin_logged_in", "true");
+        }
         setStatus("success");
         router.push("/adshs/dashboard");
       } else {

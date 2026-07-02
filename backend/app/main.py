@@ -7,6 +7,8 @@ later phases.
 DB engine initialization is now deferred to lifespan to prevent import-time
 connection attempts (critical for TestClient stability).
 """
+import logging
+import secrets
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,10 +24,28 @@ from app.schemas.common import HealthStatus
 
 settings = get_settings()
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO if not settings.debug else logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: initialize DB engine at startup (not import)."""
+    # Security validation: fail-fast if AUTH_SECRET is weak/default
+    if not settings.debug and (
+        settings.auth_secret == "change-me" 
+        or settings.auth_secret == "change-me-to-a-long-random-string-in-production"
+        or len(settings.auth_secret) < 32
+    ):
+        raise ValueError(
+            "SECURITY ERROR: AUTH_SECRET must be at least 32 characters and not the default value. "
+            "Generate a secure random string for production."
+        )
+    
     init_db()
     yield
     # (no explicit shutdown required for current scope)
@@ -69,8 +89,19 @@ async def health_v1() -> HealthStatus:
 async def unhandled_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
-    # Consistent structured error envelope.
+    # Log full error server-side, return only error_id to client
+    error_id = secrets.token_urlsafe(16)
+    logger.error(
+        f"Unhandled exception [{error_id}]: {type(exc).__name__}: {exc}",
+        exc_info=True
+    )
     return JSONResponse(
         status_code=500,
-        content={"error": {"type": "internal_error", "message": str(exc)}},
+        content={
+            "error": {
+                "type": "internal_error",
+                "error_id": error_id,
+                "message": "An unexpected error occurred. Please try again later."
+            }
+        },
     )

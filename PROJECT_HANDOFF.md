@@ -153,12 +153,55 @@ Completed:
 
 ## 8. Frontend Status
 
-Completed:
-- `frontend/Dockerfile` exists for container build.
+**Completion:** ~45% (substantial implementation exists, but critical gaps remain)
 
-Missing:
-- No Next.js application source code or React pages/components.
-- No frontend implementation for public pages or admin panel.
+**Completed:**
+- `frontend/Dockerfile` — 3-stage standalone build (deps → builder → runner)
+- Next.js 14 App Router with TypeScript + Tailwind CSS
+- **Adapter Firewall Pattern:** `frontend/lib/adapters/*.ts` isolates API drift, normalizes backend responses
+- **Service Layer:** `frontend/services/*.ts` for API consumption (public.service.ts, admin.service.ts, chat.service.ts)
+- **State Management:** Custom hooks (useLanguage, useTheme via next-themes)
+- **Public Pages (5 total):**
+  - Homepage (`/`) — hero, about, skills snapshot, experience highlights, featured projects, education, contact
+  - Projects (`/projects`) — filterable grid with tech tags
+  - Skills (`/skills`) — categorized list with proficiency levels
+  - Experience (`/experience`) — chronological timeline
+  - Education (`/education`) — academic records
+- **Chat Page:** `/chat` — interactive RAG chatbot UI with state machine (idle/loading/answered/no_answer/error)
+- **Admin Pages (4/9 domains):**
+  - Dashboard (`/adshs/dashboard`)
+  - Skills CRUD (`/adshs/skills`)
+  - Projects CRUD (`/adshs/projects`)
+  - Experience CRUD (`/adshs/experience`)
+  - Education CRUD (`/adshs/education`)
+- **Auth Flow:** JWT login at `/adshs/login`, stored in localStorage (security issue — P0-5)
+- **Bilingual Support:** Language toggle (EN/FA), RTL handling for Persian
+- **Build Status:** `npm run build` succeeds, 21 pages generated (all static/CSR)
+
+**Critical Issues (P0):**
+- **P0-3:** Duplicate route trees — both `/admin/*` and `/adshs/*` exist (~1,360 LOC duplication), auth guard broken for `/admin/*`
+- **P0-6:** All 5 public pages use `"use client"` → 100% client-side rendering (CSR), zero SSR/SSG → SEO destroyed, no metadata/OG/sitemap/robots
+- **P0-2:** Admin CMS incomplete — missing 5/9 content domains (courses, certificates, social-links, ai-knowledge, profile editing)
+- **P0-4:** Chat adapter maps unknown statuses (`unrelated`, `needs_clarification`) to `"answered"` → UX state machine broken
+- **P0-5:** JWT stored in localStorage (XSS theft risk), no httpOnly cookie
+
+**High Priority Issues (P1):**
+- **P1-9:** No error boundaries (`error.tsx`, `not-found.tsx`, `global-error.tsx`)
+- **P1-10:** Admin token sent on every public API request (leaks to logs/CDN)
+- **PII Exposure:** `frontend/lib/identity.ts` hardcodes "SHAHIN Saberi", phone, Telegram links (should be config-driven)
+
+**Architecture Strengths:**
+- Clean adapter firewall prevents API drift from corrupting UI
+- Service layer enforces single-source-of-truth for data fetching
+- Type-safe with TypeScript throughout
+- Consistent state management patterns
+
+**Architecture Weaknesses:**
+- 100% CSR kills SEO and performance (waterfall fetches, no SSR)
+- Massive code duplication (8 admin CRUD pages × 2 routes = ~1,600 LOC copy-paste)
+- No shared `<AdminCrudTable<T>>` component (each page reimplements list/form/modal)
+- No image optimization (`<img>` instead of `next/image`)
+- No accessibility attributes (aria-labels, skip links, focus management)
 
 ## 9. RAG Status
 

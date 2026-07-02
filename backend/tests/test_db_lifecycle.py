@@ -13,6 +13,8 @@ from app.db.session import get_db, init_db
 
 async def _fake_get_db():
     """Fake async generator that yields a properly mocked session."""
+    from unittest.mock import MagicMock
+    
     session = AsyncMock()
 
     # Profile for get_profile
@@ -23,12 +25,13 @@ async def _fake_get_db():
         "github_url": None, "linkedin_url": None,
         "website_url": None, "cv_pdf_url": None
     })()
-    session.scalar.return_value = mock_profile
+    session.scalar = AsyncMock(return_value=mock_profile)
 
     # Make execute().scalars().all() return proper list (sync result)
-    exec_result = AsyncMock()
-    exec_result.scalars.return_value.all.return_value = []
-    session.execute.return_value = exec_result
+    # session.execute() must be an async function that returns a sync result object
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    session.execute = AsyncMock(return_value=mock_result)
 
     yield session
 

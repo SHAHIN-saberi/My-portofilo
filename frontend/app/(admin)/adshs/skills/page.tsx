@@ -26,7 +26,7 @@ export default function AdminSkillsPage() {
   const [descFa, setDescFa] = useState("");
 
   const fetchSkills = useCallback(async () => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("admin_token") : null;
+    const token = typeof window !== "undefined" ? localStorage.getItem("admin_logged_in") === "true" : null;
     if (!token) {
       router.push("/adshs/login");
       return;
@@ -40,7 +40,7 @@ export default function AdminSkillsPage() {
     } catch (err: unknown) {
       const normErr = normalizeError(err);
       if (normErr.status === 401) {
-        localStorage.removeItem("admin_token");
+        localStorage.removeItem("admin_logged_in");
         router.push("/adshs/login");
         return;
       }
