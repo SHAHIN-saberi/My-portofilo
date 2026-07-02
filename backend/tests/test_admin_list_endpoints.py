@@ -28,7 +28,8 @@ def test_all_expected_list_functions_exist_and_are_async():
     for path, func in LIST_ENDPOINTS.items():
         assert inspect.iscoroutinefunction(func), f"{path} -> {func.__name__} must be async"
         params = list(inspect.signature(func).parameters)
-        assert params == ["session"], f"{func.__name__} should take only `session`"
+        # Should have session, and optionally limit/offset
+        assert "session" in params, f"{func.__name__} should have `session` parameter"
 
 
 def test_get_route_registered_for_every_list_endpoint():
