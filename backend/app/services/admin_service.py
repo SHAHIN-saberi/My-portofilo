@@ -381,6 +381,7 @@ async def list_projects(session: AsyncSession) -> list[dict]:
                     {
                         "lang": translation.lang,
                         "title": translation.title,
+                        "short_description": translation.short_description,
                         "description": translation.description,
                         "role": translation.role,
                         "impact": translation.impact,

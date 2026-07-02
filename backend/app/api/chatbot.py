@@ -4,10 +4,11 @@ Endpoint contract only; all decisioning (scope filter, relevance gate,
 retrieval, rerank, generation, fallbacks, stop conditions, clarification)
 lives in `app.services.rag`.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.core.limiter import limiter
 from app.db.session import get_db
 from app.schemas.chatbot import ChatQueryRequest, ChatQueryResponse, ChatSource
 from app.services.ai_provider.base import AIProvider
@@ -18,7 +19,9 @@ router = APIRouter(tags=["chatbot"])
 
 
 @router.post("/query", response_model=ChatQueryResponse)
+@limiter.limit("20/minute")
 async def query(
+    request: Request,
     payload: ChatQueryRequest,
     session: AsyncSession = Depends(get_db),
     ai_provider: AIProvider = Depends(get_ai_provider),

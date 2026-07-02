@@ -130,6 +130,7 @@ class CertificatePayload(BaseModel):
 
 class ProjectTranslationPayload(TranslationBase):
     title: str | None = None
+    short_description: str | None = None
     description: str | None = None
     role: str | None = None
     impact: str | None = None

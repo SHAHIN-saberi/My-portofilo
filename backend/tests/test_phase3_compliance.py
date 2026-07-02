@@ -66,7 +66,7 @@ def test_knowledge_chunk_indexes_and_vector_dimensions() -> None:
 
 def test_migration_includes_pgvector_setup() -> None:
     with open(
-        "backend/alembic/versions/0001_initial.py",
+        "alembic/versions/0001_initial.py",
         encoding="utf-8",
     ) as source_file:
         source = source_file.read()
