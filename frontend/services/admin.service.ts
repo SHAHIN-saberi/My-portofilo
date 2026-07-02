@@ -203,3 +203,67 @@ export async function getKnowledgeStatusService(): Promise<
   });
   return adminKnowledgeStatusAdapter(raw);
 }
+
+// Courses
+export async function listAdminCoursesService(): Promise<SafeAPIResponse<any[]>> {
+  const raw = await apiFetch("/api/v1/admin/courses", { method: "GET" });
+  return { data: (raw as any)?.data || [], meta: {}, isValid: true };
+}
+
+export async function createAdminCourseService(payload: any): Promise<SafeAPIResponse<{ id: number }>> {
+  const raw = await apiFetch("/api/v1/admin/courses", { method: "POST", body: JSON.stringify(payload) });
+  return { data: { id: (raw as any)?.data?.id || 0 }, meta: {}, isValid: true };
+}
+
+export async function deleteAdminCourseService(id: number): Promise<SafeAPIResponse<MessageResponse>> {
+  const raw = await apiFetch(`/api/v1/admin/courses/${id}`, { method: "DELETE" });
+  return { data: { message: "Deleted" }, meta: {}, isValid: true };
+}
+
+// Certificates
+export async function listAdminCertificatesService(): Promise<SafeAPIResponse<any[]>> {
+  const raw = await apiFetch("/api/v1/admin/certificates", { method: "GET" });
+  return { data: (raw as any)?.data || [], meta: {}, isValid: true };
+}
+
+export async function createAdminCertificateService(payload: any): Promise<SafeAPIResponse<{ id: number }>> {
+  const raw = await apiFetch("/api/v1/admin/certificates", { method: "POST", body: JSON.stringify(payload) });
+  return { data: { id: (raw as any)?.data?.id || 0 }, meta: {}, isValid: true };
+}
+
+export async function deleteAdminCertificateService(id: number): Promise<SafeAPIResponse<MessageResponse>> {
+  const raw = await apiFetch(`/api/v1/admin/certificates/${id}`, { method: "DELETE" });
+  return { data: { message: "Deleted" }, meta: {}, isValid: true };
+}
+
+// Social Links
+export async function listAdminSocialLinksService(): Promise<SafeAPIResponse<any[]>> {
+  const raw = await apiFetch("/api/v1/admin/social-links", { method: "GET" });
+  return { data: (raw as any)?.data || [], meta: {}, isValid: true };
+}
+
+export async function createAdminSocialLinkService(payload: any): Promise<SafeAPIResponse<{ id: number }>> {
+  const raw = await apiFetch("/api/v1/admin/social-links", { method: "POST", body: JSON.stringify(payload) });
+  return { data: { id: (raw as any)?.data?.id || 0 }, meta: {}, isValid: true };
+}
+
+export async function deleteAdminSocialLinkService(id: number): Promise<SafeAPIResponse<MessageResponse>> {
+  const raw = await apiFetch(`/api/v1/admin/social-links/${id}`, { method: "DELETE" });
+  return { data: { message: "Deleted" }, meta: {}, isValid: true };
+}
+
+// AI Knowledge
+export async function listAdminAIKnowledgeService(): Promise<SafeAPIResponse<any[]>> {
+  const raw = await apiFetch("/api/v1/admin/ai-knowledge", { method: "GET" });
+  return { data: (raw as any)?.data || [], meta: {}, isValid: true };
+}
+
+export async function createAdminAIKnowledgeService(payload: any): Promise<SafeAPIResponse<{ id: number }>> {
+  const raw = await apiFetch("/api/v1/admin/ai-knowledge", { method: "POST", body: JSON.stringify(payload) });
+  return { data: { id: (raw as any)?.data?.id || 0 }, meta: {}, isValid: true };
+}
+
+export async function deleteAdminAIKnowledgeService(id: number): Promise<SafeAPIResponse<MessageResponse>> {
+  const raw = await apiFetch(`/api/v1/admin/ai-knowledge/${id}`, { method: "DELETE" });
+  return { data: { message: "Deleted" }, meta: {}, isValid: true };
+}

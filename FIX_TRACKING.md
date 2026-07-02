@@ -27,10 +27,28 @@
     - Chat UI: Added "Rephrase & Retry" button for `needs_clarification` status
   - **Files:** `backend/app/schemas/chatbot.py`, `frontend/types/safe.ts`, `frontend/types/state.ts`, `frontend/types/index.ts`, `frontend/lib/adapters/chat.adapter.ts`, `frontend/app/chat/page.tsx`
 
-- [ ] **P0-2**: Complete 5 missing admin pages (courses, certificates, social-links, ai-knowledge, profile)
-  - **Status:** NOT FIXED
-  - **Verification:** Only 4 admin domains implemented (skills, projects, experience, education)
-  - **Files:** `frontend/app/(admin)/adshs/` — missing 5 page directories
+- [x] **P0-2**: Complete 5 missing admin pages (courses, certificates, social-links, ai-knowledge, profile)
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Created generic `AdminCrudPage` component for reusable CRUD UI (list, create, delete)
+    - Created 5 new admin pages using the generic component:
+      - `/adshs/courses` — Course management (provider, title, date, credential URL)
+      - `/adshs/certificates` — Certificate management (issuer, title, date, credential URL)
+      - `/adshs/social-links` — Social link management (platform, URL)
+      - `/adshs/ai-knowledge` — AI knowledge base management (title, content)
+      - `/adshs/profile` — Profile editing (name, contact, social links, bio, summary)
+    - Added service functions for courses, certificates, social-links, ai-knowledge
+    - Updated AdminNavbar to include all 10 navigation links
+  - **Files:**
+    - `frontend/components/AdminCrudPage.tsx` — Generic CRUD component (new)
+    - `frontend/app/(admin)/adshs/courses/page.tsx` — Courses page (new)
+    - `frontend/app/(admin)/adshs/certificates/page.tsx` — Certificates page (new)
+    - `frontend/app/(admin)/adshs/social-links/page.tsx` — Social links page (new)
+    - `frontend/app/(admin)/adshs/ai-knowledge/page.tsx` — AI knowledge page (new)
+    - `frontend/app/(admin)/adshs/profile/page.tsx` — Profile editor (new)
+    - `frontend/services/admin.service.ts` — Added CRUD service functions
+    - `frontend/components/AdminNavbar.tsx` — Added 5 new nav links
+  - **Build verification:** 22 pages (up from 17), all 9 admin domains now have UI
 
 - [x] **P0-3**: Delete duplicate `/admin` route tree, keep `/adshs`, fix auth guard
   - **Status:** FIXED ✅

@@ -31,10 +31,15 @@ export const AdminNavbar: React.FC = () => {
 
   const navLinks = [
     { href: "/adshs/dashboard", label: "Dashboard" },
+    { href: "/adshs/profile", label: "Profile" },
     { href: "/adshs/skills", label: "Skills" },
     { href: "/adshs/projects", label: "Projects" },
     { href: "/adshs/experience", label: "Experience" },
     { href: "/adshs/education", label: "Education" },
+    { href: "/adshs/courses", label: "Courses" },
+    { href: "/adshs/certificates", label: "Certificates" },
+    { href: "/adshs/social-links", label: "Social Links" },
+    { href: "/adshs/ai-knowledge", label: "AI Knowledge" },
   ];
 
   return (
