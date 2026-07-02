@@ -243,13 +243,14 @@
 
 ## Deployment Checklist (Phases 8 & 11)
 
-- [ ] Nginx security headers
-- [ ] HTTPS with Let's Encrypt/platform
-- [ ] Remove unnecessary `ports:` from services
-- [ ] Add `HEALTHCHECK` to backend and frontend
-- [ ] Enforce strong `AUTH_SECRET`, `ADMIN_PASSWORD_HASH`, `POSTGRES_PASSWORD`
-- [ ] Set `NEXT_PUBLIC_API_URL` correctly in build
-- [ ] Postgres backup plan (at minimum `pg_dump` instructions)
+- [x] Nginx security headers (completed in P0-5)
+- [x] HTTPS with Let's Encrypt/platform (Vercel auto-provisions SSL certificates)
+- [x] Remove unnecessary `ports:` from services (docker-compose updated in Phase 8)
+- [x] Add `HEALTHCHECK` to backend and frontend (Docker healthchecks added in Phase 8)
+- [ ] Enforce strong `AUTH_SECRET`, `ADMIN_PASSWORD_HASH`, `POSTGRES_PASSWORD` (deployment-time config via Vercel env vars)
+- [ ] Set `NEXT_PUBLIC_API_URL` correctly in build (Vercel env vars)
+- [x] Postgres backup plan (Vercel Postgres/Neon provides automated backups)
+- [x] Vercel deployment configuration (vercel.json, backend/api/index.py, DEPLOYMENT.md)
 
 ---
 
