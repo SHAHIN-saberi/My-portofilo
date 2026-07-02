@@ -144,8 +144,13 @@
 
 ## 🟠 P1 — High (RAG/Frontend/Security Cluster)
 
-- [ ] **P1-4**: Document/tune similarity gate thresholds + add logging
-  - **Status:** NOT FIXED
+- [x] **P1-4**: Document/tune similarity gate thresholds + add logging
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Added structured logging to `passes_similarity_gate()` with RRF score, threshold, method contribution
+    - Documented threshold values: both_methods ≈ 0.008 RRF, single_method ≈ 0.013 RRF (with default threshold=0.65)
+    - Added correlation ID logging throughout `build_question_answer()` pipeline (12 log points)
+    - Added language enforcement in `generate_chat_response()` (lang parameter in system prompt)
   - **Files:** `backend/app/services/rag.py`
 
 - [ ] **P1-9**: Add `error.tsx`, `not-found.tsx`, `global-error.tsx`
@@ -157,8 +162,12 @@
   - **Verification:** `api.ts:33` unconditionally adds Bearer token if localStorage has it
   - **Files:** `frontend/lib/api.ts`
 
-- [ ] **P1-11**: Add prompt-injection delimiters around retrieved content
-  - **Status:** NOT FIXED
+- [x] **P1-11**: Add prompt-injection delimiters around retrieved content
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Updated `assemble_context()` to wrap each source in `<source>...</source>` tags
+    - Added token budget enforcement (MAX_CONTEXT_CHARS=12000 ≈ 3000 tokens)
+    - Prevents overflow of LLM context window and mitigates prompt injection from CMS content
   - **Files:** `backend/app/services/rag.py`
 
 - [ ] **P1-12**: Add nginx security headers (if not completed in P0-5)
