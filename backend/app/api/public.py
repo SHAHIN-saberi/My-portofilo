@@ -26,7 +26,7 @@ async def get_profile_endpoint(
 
 
 @router.get("/skills", response_model=Envelope)
-async def list_skills(
+async def list_skills_endpoint(
     lang: Lang = Query("en"),
     category: str | None = Query(None),
     session: AsyncSession = Depends(get_db),
@@ -38,14 +38,14 @@ async def list_skills(
 
 
 @router.get("/experiences", response_model=Envelope)
-async def list_experiences(
+async def list_experiences_endpoint(
     lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
 ) -> Envelope:
     return Envelope(data=await list_experiences(session, lang), meta={"lang": lang})
 
 
 @router.get("/projects", response_model=Envelope)
-async def list_projects(
+async def list_projects_endpoint(
     lang: Lang = Query("en"),
     featured: bool | None = Query(None),
     session: AsyncSession = Depends(get_db),
@@ -57,21 +57,21 @@ async def list_projects(
 
 
 @router.get("/education", response_model=Envelope)
-async def list_education(
+async def list_education_endpoint(
     lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
 ) -> Envelope:
     return Envelope(data=await list_education(session, lang), meta={"lang": lang})
 
 
 @router.get("/courses", response_model=Envelope)
-async def list_courses(
+async def list_courses_endpoint(
     lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
 ) -> Envelope:
     return Envelope(data=await list_courses(session, lang), meta={"lang": lang})
 
 
 @router.get("/certificates", response_model=Envelope)
-async def list_certificates(
+async def list_certificates_endpoint(
     lang: Lang = Query("en"), session: AsyncSession = Depends(get_db)
 ) -> Envelope:
     return Envelope(data=await list_certificates(session, lang), meta={"lang": lang})

@@ -3,7 +3,11 @@
 Wires configuration, CORS, routers, health check, and a consistent error
 envelope. Product logic lives in the routers/services and is filled in across
 later phases.
+
+DB engine initialization is now deferred to lifespan to prevent import-time
+connection attempts (critical for TestClient stability).
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,14 +17,25 @@ from slowapi.errors import RateLimitExceeded
 from app.api import admin, chatbot, public
 from app.core.config import get_settings
 from app.core.limiter import limiter
+from app.db.session import init_db
 from app.schemas.common import HealthStatus
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: initialize DB engine at startup (not import)."""
+    init_db()
+    yield
+    # (no explicit shutdown required for current scope)
+
 
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     debug=settings.debug,
+    lifespan=lifespan,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
