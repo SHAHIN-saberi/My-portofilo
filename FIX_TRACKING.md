@@ -62,10 +62,31 @@
     - Frontend migration: Replaced localStorage token storage with `admin_logged_in` flag (UI state only), `credentials: "include"` for cookie-based auth (`frontend/lib/api.ts:34-47`, `frontend/app/(admin)/layout.tsx`, `frontend/components/AdminNavbar.tsx`, all `/adshs/*` pages)
   - **Files:** `backend/app/main.py`, `backend/app/api/admin.py`, `backend/app/core/security.py`, `nginx/nginx.conf`, `frontend/lib/api.ts`, `frontend/app/(admin)/layout.tsx`, `frontend/components/AdminNavbar.tsx`, `frontend/app/(admin)/adshs/*`
 
-- [ ] **P0-6**: Convert public pages to Server Components + metadata + sitemap/robots
-  - **Status:** NOT FIXED
-  - **Verification:** All 5 public pages have `"use client"` on line 1 (page.tsx, projects, skills, experience, education)
-  - **Files:** `frontend/app/(public)/*/page.tsx`
+- [x] **P0-6**: Convert public pages to Server Components + metadata + sitemap/robots
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Removed `"use client"` from all 5 public pages (page.tsx, projects, skills, experience, education)
+    - Split each page into Server Component (data fetch + metadata) + Client Component (interactivity)
+    - Created `lib/serverApi.ts` for server-side API calls with ISR (revalidate: 60s)
+    - Added `generateMetadata()` to all pages (title, description, Open Graph)
+    - Added JSON-LD schema.org `Person` structured data to homepage
+    - Created `app/sitemap.ts` for dynamic sitemap generation
+    - Created `app/robots.ts` for robots.txt (disallows /adshs/ and /api/)
+  - **Files:**
+    - `frontend/app/(public)/page.tsx` → Server Component
+    - `frontend/app/(public)/HomePageClient.tsx` → Client Component (new)
+    - `frontend/app/(public)/skills/page.tsx` → Server Component
+    - `frontend/app/(public)/skills/SkillsClient.tsx` → Client Component (new)
+    - `frontend/app/(public)/projects/page.tsx` → Server Component
+    - `frontend/app/(public)/projects/ProjectsClient.tsx` → Client Component (new)
+    - `frontend/app/(public)/experience/page.tsx` → Server Component
+    - `frontend/app/(public)/experience/ExperienceClient.tsx` → Client Component (new)
+    - `frontend/app/(public)/education/page.tsx` → Server Component
+    - `frontend/app/(public)/education/EducationClient.tsx` → Client Component (new)
+    - `frontend/lib/serverApi.ts` → Server-side fetch helpers (new)
+    - `frontend/app/sitemap.ts` → Dynamic sitemap (new)
+    - `frontend/app/robots.ts` → robots.txt (new)
+  - **Build verification:** 17 pages (15 + sitemap.xml + robots.txt), all Server Components
 
 ---
 
