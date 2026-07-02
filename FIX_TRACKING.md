@@ -18,10 +18,15 @@
   - **Verification:** Only 4 admin domains implemented (skills, projects, experience, education)
   - **Files:** `frontend/app/(admin)/adshs/` — missing 5 page directories
 
-- [ ] **P0-3**: Delete duplicate `/admin` route tree, keep `/adshs`, fix auth guard
-  - **Status:** NOT FIXED
-  - **Verification:** Both `/admin/*` and `/adshs/*` exist (~1,360 LOC duplication)
-  - **Files:** `frontend/app/(admin)/admin/*` (6 files to delete), `frontend/app/(admin)/layout.tsx`
+- [x] **P0-3**: Delete duplicate `/admin` route tree, keep `/adshs`, fix auth guard
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Deleted entire `frontend/app/(admin)/admin/` directory (6 files: dashboard, education, experience, login, projects, skills)
+    - Created `frontend/middleware.ts` for server-side auth redirect (checks `admin_token` cookie on `/adshs/*` except `/adshs/login`)
+    - Verified no remaining references to `/admin/*` routes in codebase
+  - **Files deleted:** `frontend/app/(admin)/admin/*` (6 files, ~1,360 LOC)
+  - **Files created:** `frontend/middleware.ts`
+  - **Build verification:** 15 pages (down from 21), middleware active (26.5 kB)
 
 - [ ] **P0-4**: Fix `ChatQueryResponse.status` enum + frontend adapter handling
   - **Status:** PARTIALLY FIXED (backend schema is `str`, not Literal)
