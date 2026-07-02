@@ -181,8 +181,15 @@
   - **Status:** NOT FIXED
   - **Files:** `nginx/nginx.conf`
 
-- [ ] **P1-13**: Set up CI/CD (Phase 10)
-  - **Status:** NOT FIXED
+- [x] **P1-13**: Set up CI/CD (Phase 10)
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Added `.github/workflows/ci.yml` with backend (pytest) and frontend (build + tsc) jobs
+    - Added `.github/dependabot.yml` for pip, npm, and github-actions updates
+    - CI runs on push to main/master and all pull requests
+    - Dependabot checks weekly for dependency updates
+  - **Files:** `.github/workflows/ci.yml`, `.github/dependabot.yml`
+  - **Verification:** Workflow will run on first PR to main branch
 
 - [x] **P1-3**: Docker hardening (Phase 8)
   - **Status:** FIXED ✅
