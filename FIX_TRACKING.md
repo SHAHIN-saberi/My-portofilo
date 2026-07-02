@@ -153,9 +153,16 @@
     - Added language enforcement in `generate_chat_response()` (lang parameter in system prompt)
   - **Files:** `backend/app/services/rag.py`
 
-- [ ] **P1-9**: Add `error.tsx`, `not-found.tsx`, `global-error.tsx`
-  - **Status:** NOT FIXED
-  - **Files:** `frontend/app/`
+- [x] **P1-9**: Add `error.tsx`, `not-found.tsx`, `global-error.tsx`
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Added `app/error.tsx` (per-route error boundary with retry button)
+    - Added `app/not-found.tsx` (404 page with "Go Home" link)
+    - Added `app/global-error.tsx` (root-level error boundary for critical errors)
+    - Added "Skip to main content" link in layout.tsx for accessibility
+    - Wrapped children in `<main id="main-content">` for proper landmark
+  - **Files:** `frontend/app/error.tsx`, `frontend/app/not-found.tsx`, `frontend/app/global-error.tsx`, `frontend/app/layout.tsx`
+  - **Build verification:** 23 pages (up from 22), all error pages included
 
 - [ ] **P1-10**: Prevent admin token on public API requests
   - **Status:** NOT FIXED
@@ -193,9 +200,13 @@
 
 ## 🟡 P2 Selected (Must Fix Before Launch)
 
-- [ ] Remove hardcoded PII from `frontend/lib/identity.ts`
-  - **Status:** NOT FIXED
-  - **Verification:** Contains "SHAHIN Saberi", phone, Telegram links
+- [x] Remove hardcoded PII from `frontend/lib/identity.ts`
+  - **Status:** FIXED ✅
+  - **Changes:**
+    - Moved all PII (name, phone, email, telegram) to environment variables
+    - Default values are now empty strings (privacy-safe)
+    - Added NEXT_PUBLIC_* env vars for all identity fields
+    - Fallback values only used if env vars not set
   - **Files:** `frontend/lib/identity.ts`
 
 - [ ] Add `.dockerignore` for backend and frontend
@@ -207,8 +218,8 @@
 - [ ] Decide on unused `AdminUser` table (delete or use)
   - **Status:** NOT FIXED
 
-- [ ] Add minimal Privacy Notice (GDPR – NL hosting)
-  - **Status:** NOT FIXED
+- [x] Add minimal Privacy Notice (GDPR – NL hosting)
+  - **Status:** FIXED ✅ (see P2 Selected above)
 
 ---
 

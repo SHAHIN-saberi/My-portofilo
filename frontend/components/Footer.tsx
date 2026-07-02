@@ -86,9 +86,13 @@ export const Footer: React.FC = () => {
           <span className="text-[10px] text-amber-500">Note: Displaying emergency fallback info ({errorMsg})</span>
         )}
 
-        <p className="text-xs text-slate-500">
-          © {new Date().getFullYear()} {name}. All rights reserved.
-        </p>
+        <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500">
+          <a href="/privacy" className="hover:text-blue-400 transition">
+            Privacy Notice
+          </a>
+          <span>•</span>
+          <span>© {new Date().getFullYear()} {name}. All rights reserved.</span>
+        </div>
       </div>
     </footer>
   );
