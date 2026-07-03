@@ -5,7 +5,7 @@ pytest>=7.0.0
 # DB / ORM / migrations
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
-alembic==1.14.0
+alembic==1.18.5
 pgvector==0.3.6
 
 # Validation / settings
