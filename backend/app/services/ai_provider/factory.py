@@ -10,9 +10,10 @@ from fastapi import Depends
 from app.core.config import Settings, get_settings
 from app.services.ai_provider.base import AIProvider
 from app.services.ai_provider.deepseek import DeepSeekProvider
-
+from app.services.ai_provider.gemini import GeminiProvider
 _PROVIDERS = {
     "deepseek": DeepSeekProvider,
+    "gemini": GeminiProvider,
 }
 
 
