@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     deepseek_chat_model: str = "deepseek-chat"
     deepseek_embed_model: str = "deepseek-embed"
     embedding_dim: int = 1024
+    gemini_api_key: str = ""
 
     # ---- Auth (single admin) ----
     admin_email: str = "owner@example.com"
